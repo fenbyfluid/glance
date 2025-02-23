@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Auth\Access\Authorizable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\URL;
 
 class User extends Model implements AuthenticatableContract, AuthorizableContract
 {
@@ -23,6 +25,8 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
     protected $fillable = [
         'username',
         'password',
+        'note',
+        'is_admin',
     ];
 
     /**
@@ -44,6 +48,19 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
     {
         return [
             'password' => 'hashed',
+            'is_admin' => 'boolean',
         ];
+    }
+
+    public function getInviteUrl(): ?string
+    {
+        if (isset($this->password)) {
+            return null;
+        }
+
+        return URL::temporarySignedRoute(
+            'invite.link',
+            Carbon::now()->addDays(7),
+            ['user' => $this]);
     }
 }

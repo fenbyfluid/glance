@@ -29,4 +29,16 @@ class UserFactory extends Factory
             'remember_token' => Str::random(10),
         ];
     }
+
+    /**
+     * Indicate that the model should be a pending user.
+     */
+    public function pending(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'username' => null,
+            'password' => null,
+            'remember_token' => null,
+        ]);
+    }
 }
