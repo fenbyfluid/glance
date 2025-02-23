@@ -1,4 +1,8 @@
-<nav x-data="{ open: false }" class="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 shadow">
+<nav x-data="{ open: false }" @class([
+    'bg-white dark:bg-gray-800' => true,
+    'border-b border-gray-100 dark:border-gray-700' => isset($header),
+    'shadow' => !isset($header),
+])>
     <!-- Primary Navigation Menu -->
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between h-16">
@@ -12,15 +16,19 @@
 
                 <!-- Navigation Links -->
                 <div class="hidden space-x-8 sm:-my-px sm:ms-10 sm:flex">
-                    <x-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
-                        {{ __('Dashboard') }}
-                    </x-nav-link>
-
-                    @can('admin')
-                        <x-nav-link :href="route('admin.users.index')" :active="request()->routeIs('admin.users.index')">
-                            {{ __('Manage Users') }}
+                    @isset($navigation)
+                        {{ $navigation }}
+                    @else
+                        <x-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
+                            {{ __('Files') }}
                         </x-nav-link>
-                    @endcan
+
+                        @can('admin')
+                            <x-nav-link :href="route('admin.users.index')" :active="request()->routeIs('admin.users.index')">
+                                {{ __('Manage Users') }}
+                            </x-nav-link>
+                        @endcan
+                    @endisset
                 </div>
             </div>
 
@@ -40,6 +48,14 @@
                     </x-slot>
 
                     <x-slot name="content">
+                        @isset($navigation)
+                            @can('admin')
+                                <x-dropdown-link :href="route('admin.users.index')">
+                                    {{ __('Manage Users') }}
+                                </x-dropdown-link>
+                            @endcan
+                        @endisset
+
                         <x-dropdown-link :href="route('profile.edit')">
                             {{ __('Profile') }}
                         </x-dropdown-link>
@@ -74,7 +90,7 @@
     <div :class="{'block': open, 'hidden': ! open}" class="hidden sm:hidden">
         <div class="pt-2 pb-3 space-y-1">
             <x-responsive-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
-                {{ __('Dashboard') }}
+                {{ __('Files') }}
             </x-responsive-nav-link>
 
             @can('admin')
