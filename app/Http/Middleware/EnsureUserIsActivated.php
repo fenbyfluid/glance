@@ -28,7 +28,7 @@ class EnsureUserIsActivated
      */
     public function handle($request, Closure $next, $redirectToRoute = null)
     {
-        if (! $request->user() || $request->user()->password === null) {
+        if (!$request->user() || $request->user()->password === null) {
             return $request->expectsJson()
                 ? abort(403, 'Your account is not activated.')
                 : Redirect::guest(URL::route($redirectToRoute ?: 'invite'));
