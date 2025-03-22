@@ -1,4 +1,15 @@
 <x-app-layout>
+    <x-slot name="headElements">
+        <link rel="preload" as="style" href="{{ @asset('_static/jquery.fancybox.min.css') }}">
+        <link rel="stylesheet" href="{{ @asset('_static/jquery.fancybox.min.css') }}" />
+        <link rel="preload" as="script" href="{{ @asset('_static/jquery.min.js') }}">
+        <script defer src="{{ @asset('_static/jquery.min.js') }}"></script>
+        <link rel="preload" as="script" href="{{ @asset('_static/jquery.fancybox.min.js') }}">
+        <script defer src="{{ @asset('_static/jquery.fancybox.min.js') }}"></script>
+
+        {{ Vite::useBuildDirectory('_build')->withEntryPoints(['resources/css/media.css', 'resources/js/media.js']) }}
+    </x-slot>
+
     <x-slot name="navigation">
         <ol class="flex items-center whitespace-nowrap">
             @foreach ($breadcrumbs as $crumb)
@@ -24,7 +35,7 @@
         @foreach($contents as $group)
             <div class="my-12 sm:px-6 lg:px-8 gap-4 grid grid-cols-[repeat(auto-fill,320px)] justify-center">
                 @foreach($group as $content)
-                    <a href="{{ route('dashboard', ['path' => $path . '/' . $content->name]) }}" class="block bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-lg">
+                    <a {{ isset($content->thumbnail) ? 'data-fancybox=thumbnails' : '' }} href="{{ route('dashboard', ['path' => $path . '/' . $content->name]) }}" class="block bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-lg">
                         @isset($content->thumbnail)
                             <div class="bg-black">
                                 <img class="mx-auto w-auto h-[180px]" loading="lazy" src="{{ route('dashboard', ['path' => $content->thumbnail]) }}"  alt="{{ $content->name }}"/>

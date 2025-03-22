@@ -7,8 +7,11 @@
 
         <title>{{ config('app.name', 'Laravel') }}</title>
 
-        <!-- Scripts -->
         {{ Vite::useBuildDirectory('_build')->withEntryPoints(['resources/css/app.css', 'resources/js/app.js']) }}
+
+        @isset($headElements)
+            {{ $headElements }}
+        @endisset
     </head>
     <body class="font-sans antialiased">
         <div class="min-h-screen bg-gray-100 dark:bg-gray-900">

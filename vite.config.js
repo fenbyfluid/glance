@@ -5,7 +5,10 @@ export default defineConfig({
     plugins: [
         laravel({
             buildDirectory: '_build',
-            input: ['resources/css/app.css', 'resources/js/app.js'],
+            input: [
+                'resources/css/app.css', 'resources/js/app.js',
+                'resources/css/media.css', 'resources/js/media.js',
+            ],
             refresh: true,
         }),
     ],
