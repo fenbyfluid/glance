@@ -29,12 +29,22 @@ class DirectorySource
             }
 
             if ($child->isDir()) {
-                $contents[0][] = new MediaContentItem($name, null);
+                $contents[0][] = new MediaContentItem($name, null, null);
 
                 continue;
             }
 
-            $contents[1][] = new MediaContentItem($name, $this->getThumbnail($child->getRealPath()));
+            // TODO: Deal with symlinks sanely.
+            if (!$child->isFile()) {
+                continue;
+            }
+
+            $itemPath = $child->getRealPath();
+            if ($itemPath === false) {
+                continue;
+            }
+
+            $contents[1][] = new MediaContentItem($name, $this->getMimeType($itemPath), $this->getThumbnail($itemPath));
         }
 
         foreach ($contents as &$group) {
@@ -43,6 +53,13 @@ class DirectorySource
         unset($group);
 
         return $contents;
+    }
+
+    private function getMimeType(string $itemPath): ?string
+    {
+        $mimeType = mime_content_type($itemPath);
+
+        return ($mimeType !== false) ? $mimeType : null;
     }
 
     private function getThumbnail(string $path): ?string

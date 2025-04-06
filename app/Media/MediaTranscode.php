@@ -168,7 +168,10 @@ class MediaTranscode
 
     private function getOutputArguments(): array
     {
+        $startOffset = $this->initialSegment * $this->segmentLength;
+
         return [
+            '-output_ts_offset', (string) $startOffset,
             '-f', 'hls',
             '-hls_segment_filename', '%d.ts',
             '-hls_time', (string) $this->segmentLength,

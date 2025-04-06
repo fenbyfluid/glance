@@ -35,10 +35,10 @@
         @foreach($contents as $group)
             <div class="my-12 sm:px-6 lg:px-8 gap-4 grid grid-cols-[repeat(auto-fill,320px)] justify-center">
                 @foreach($group as $content)
-                    <a {{ isset($content->thumbnail) ? 'data-fancybox=thumbnails' : '' }} href="{{ route('dashboard', ['path' => $path . '/' . $content->name]) }}" class="block bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-lg">
+                    <a {!! isset($content->thumbnail) ? 'data-fancybox="thumbnails"' : '' !!} href="{{ route('dashboard', ['path' => $path . '/' . $content->name]) }}" class="block bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-lg">
                         @isset($content->thumbnail)
                             <div class="bg-black">
-                                <img class="mx-auto w-auto h-[180px]" loading="lazy" src="{{ route('dashboard', ['path' => $content->thumbnail]) }}"  alt="{{ $content->name }}"/>
+                                <img class="mx-auto w-auto h-[180px]" loading="lazy" src="{{ route('dashboard', ['path' => $content->thumbnail]) }}" alt="{{ $content->name }}" {!! isset($content->mimeType) ? 'data-mime="'.htmlspecialchars($content->mimeType).'"' : '' !!} />
                             </div>
                         @else
                             <div class="p-6 text-gray-900 dark:text-gray-100">
