@@ -7,10 +7,10 @@
 
     <div class="py-12">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
-            <div class="p-4 sm:p-8 bg-white dark:bg-gray-800 shadow sm:rounded-lg">
+            <div class="p-4 sm:p-8 bg-white dark:bg-gray-800 shadow-sm sm:rounded-lg">
                 <div class="divide-y *:py-2 -my-2">
                     @foreach($users as $user)
-                        <div class="flex items-center gap-3">
+                        <div class="flex items-center gap-3 border-gray-200">
                             <div class="flex-1">{{ $user->note }}</div>
                             @empty($user->username)
                                 <div>{{ __('Pending') }}</div>
@@ -27,7 +27,7 @@
                     @endforeach
                 </div>
             </div>
-            <div class="p-4 sm:p-8 bg-white dark:bg-gray-800 shadow sm:rounded-lg">
+            <div class="p-4 sm:p-8 bg-white dark:bg-gray-800 shadow-sm sm:rounded-lg">
                 <x-primary-link href="{{ route('admin.users.create') }}">
                     {{ __('Create User') }}
                 </x-primary-link>
