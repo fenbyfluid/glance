@@ -9,8 +9,8 @@ export default defineConfig({
         laravel({
             buildDirectory: '_build',
             input: [
-                'resources/css/app.css', 'resources/js/app.js',
-                'resources/css/media.css', 'resources/js/media.js',
+                'resources/js/app.js',
+                'resources/js/media.js',
             ],
             refresh: true,
         }),

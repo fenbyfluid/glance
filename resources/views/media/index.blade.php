@@ -1,13 +1,6 @@
 <x-app-layout>
     <x-slot name="headElements">
-        <link rel="preload" as="style" href="{{ @asset('_static/jquery.fancybox.min.css') }}">
-        <link rel="stylesheet" href="{{ @asset('_static/jquery.fancybox.min.css') }}" />
-        <link rel="preload" as="script" href="{{ @asset('_static/jquery.min.js') }}">
-        <script defer src="{{ @asset('_static/jquery.min.js') }}"></script>
-        <link rel="preload" as="script" href="{{ @asset('_static/jquery.fancybox.min.js') }}">
-        <script defer src="{{ @asset('_static/jquery.fancybox.min.js') }}"></script>
-
-        {{ Vite::useBuildDirectory('_build')->withEntryPoints(['resources/css/media.css', 'resources/js/media.js']) }}
+        @vite('resources/js/media.js')
     </x-slot>
 
     <x-slot name="navigation">

@@ -3,13 +3,18 @@
 // * disable touch gestures completely by setting touch:false
 // * add data-selectable="true" attribute to your html element
 
-import Hls from 'hls.js';
+import '../css/media.css';
+
+import $ from './jquery-global.js';
+import '@fancyapps/fancybox';
 
 function logFancyboxState(label, current) {
     console.log(label, (current !== undefined) ? JSON.parse(JSON.stringify(current, (k, v) => k.startsWith('$') ? v.prop('outerHTML') : v)) : current);
 }
 
-function startHlsVideo(element) {
+async function startHlsVideo(element) {
+    const { Hls } = await import('hls.js/light');
+
     if (!Hls.isMSESupported()) {
         return;
     }
@@ -112,13 +117,16 @@ $.fancybox.defaults = {
 
             // TODO: See if we need an error event listener if we're not in this state already.
             if (element.networkState === 3) {
-                const hls = startHlsVideo(element);
-                if (hls) {
+                startHlsVideo(element).then(hls => {
+                    if (!hls) {
+                        return;
+                    }
+
                     current.$slide.on('onReset', function () {
                         console.log('onReset');
                         hls.destroy();
                     });
-                }
+                });
             }
         }
     },

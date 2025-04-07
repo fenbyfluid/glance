@@ -7,7 +7,7 @@
 
         <title>{{ config('app.name', 'Laravel') }}</title>
 
-        {{ Vite::useBuildDirectory('_build')->withEntryPoints(['resources/css/app.css', 'resources/js/app.js']) }}
+        @vite('resources/js/app.js')
 
         @isset($headElements)
             {{ $headElements }}
