@@ -7,10 +7,18 @@ class Path
     /**
      * Resolves an input like "/foo/../bar/./bee/" to "bar/bee".
      * Attempts to navigate above the root directory will be dropped.
+     *
+     * @template T of string|string[]
+     *
+     * @param  T  $path
+     * @return T
      */
-    public static function resolve(string $path): string
+    public static function resolve(string|array $path): string|array
     {
-        $exploded = explode('/', $path);
+        $exploded = $path;
+        if (!is_array($exploded)) {
+            $exploded = explode('/', $path);
+        }
 
         $resolved = [];
         foreach ($exploded as $part) {
@@ -28,6 +36,10 @@ class Path
             $resolved[] = $part;
         }
 
-        return implode('/', $resolved);
+        if (is_array($path)) {
+            return $resolved;
+        } else {
+            return implode('/', $resolved);
+        }
     }
 }

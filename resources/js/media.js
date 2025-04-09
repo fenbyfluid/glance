@@ -88,7 +88,7 @@ $.fancybox.defaults = {
         logFancyboxState('beforeLoad', current);
 
         if (current.type === 'video') {
-            const src = new URL(current.src);
+            const src = new URL(current.src, window.location.href);
 
             // TODO: Use a named route somehow, account for the base path.
             src.pathname = '/_stream' + src.pathname + '.m3u8';

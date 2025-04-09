@@ -11,7 +11,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class MediaController extends Controller
 {
-    public function index(string $unsafePath = ''): View|Response
+    public function index(Request $request, string $unsafePath = ''): View|Response
     {
         $path = Path::resolve($unsafePath);
 
@@ -24,8 +24,12 @@ class MediaController extends Controller
         }
 
         if (is_file($filesystemPath)) {
+            $this->ensurePathCanonical($request, false);
+
             return response()->file($filesystemPath)->setPrivate();
         }
+
+        $this->ensurePathCanonical($request, true);
 
         return view('media.index', [
             'path' => $path,
@@ -41,6 +45,8 @@ class MediaController extends Controller
         if (preg_match('/^(.+)\.m3u8(?:\/(\d+)\.ts)?$/', $path, $matches, PREG_UNMATCHED_AS_NULL) !== 1) {
             abort(404);
         }
+
+        $this->ensurePathCanonical($request, false);
 
         $path = $matches[1];
         $segment = ($matches[2] !== null) ? (int) $matches[2] : null;
@@ -63,6 +69,22 @@ class MediaController extends Controller
         }
     }
 
+    private function ensurePathCanonical(Request $request, bool $needsTrailingSlash): void
+    {
+        $requestPathInfo = $request->getPathInfo();
+        $hasTrailingSlash = str_ends_with($requestPathInfo, '/') ||
+            str_ends_with($requestPathInfo, '%2F') ||
+            str_ends_with($requestPathInfo, '%2f');
+
+        if ($hasTrailingSlash === $needsTrailingSlash) {
+            return;
+        }
+
+        $targetUrl = preg_replace('#/?(\?|$)#', $needsTrailingSlash ? '/$1' : '$1', $request->getUri(), 1);
+
+        abort(response()->redirectTo($targetUrl));
+    }
+
     private function getCrumbsForPath(string $path): array
     {
         $crumbs = [];
@@ -70,7 +92,7 @@ class MediaController extends Controller
         $running = null;
         $crumbs[] = (object) [
             'label' => '',
-            'path' => '',
+            'path' => media_url('/'),
         ];
 
         foreach (explode('/', $path) as $crumb) {
@@ -82,7 +104,7 @@ class MediaController extends Controller
 
             $crumbs[] = (object) [
                 'label' => $crumb,
-                'path' => $running,
+                'path' => media_url($running.'/'),
             ];
         }
 

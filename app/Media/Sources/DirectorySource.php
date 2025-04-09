@@ -5,12 +5,14 @@ namespace App\Media\Sources;
 use App\Media\MediaContentItem;
 use DirectoryIterator;
 
-class DirectorySource
+readonly class DirectorySource
 {
-    private readonly string $viewerConfigHash;
+    private string $viewerConfigHash;
 
-    public function __construct(private readonly string $path) {}
+    public function __construct(private string $path) {}
 
+    // TODO: At some point we'll want a hybrid provider that loads cached metadata rather
+    //       than re-parsing files, and augments it with long-term configured metadata.
     public function getContents(): array
     {
         $iterator = new DirectoryIterator($this->path);
@@ -19,7 +21,7 @@ class DirectorySource
         foreach ($iterator as $child) {
             $name = $child->getFilename();
 
-            if ($name[0] === '.' && $name !== '..') {
+            if ($name[0] === '.') {
                 continue;
             }
 
@@ -29,7 +31,7 @@ class DirectorySource
             }
 
             if ($child->isDir()) {
-                $contents[0][] = new MediaContentItem($name, null, null);
+                $contents[0][] = new MediaContentItem($name, $name.'/', null, null);
 
                 continue;
             }
@@ -44,11 +46,17 @@ class DirectorySource
                 continue;
             }
 
-            $contents[1][] = new MediaContentItem($name, $this->getMimeType($itemPath), $this->getThumbnail($itemPath));
+            $contents[1][] = new MediaContentItem($name, $name, $this->getMimeType($itemPath), $this->getThumbnailWebPath($itemPath));
         }
 
-        foreach ($contents as &$group) {
-            usort($group, fn ($a, $b) => strnatcasecmp($a->name, $b->name));
+        foreach ($contents as $i => &$group) {
+            if (empty($group)) {
+                unset($contents[$i]);
+
+                continue;
+            }
+
+            usort($group, fn ($a, $b) => strnatcasecmp($a->label, $b->label));
         }
         unset($group);
 
@@ -62,8 +70,11 @@ class DirectorySource
         return ($mimeType !== false) ? $mimeType : null;
     }
 
-    private function getThumbnail(string $path): ?string
+    private function getThumbnailWebPath(string $path): ?string
     {
+        // TODO: This needs a complete refactor to generate locally.
+        // TODO: It also seems like it doesn't really belong at this level.
+
         // This lets us find the thumbnails from the old code, so we have something for testing.
         if (!isset($this->viewerConfigHash)) {
             $config = [
@@ -84,9 +95,9 @@ class DirectorySource
 
         $thumbnail = '.thumbs/'.$hash.'.jpg';
         if (!is_file(config('media.path').'/'.$thumbnail)) {
-            $thumbnail = null;
+            return null;
         }
 
-        return $thumbnail;
+        return media_url($thumbnail);
     }
 }
