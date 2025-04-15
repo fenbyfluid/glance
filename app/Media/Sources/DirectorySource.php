@@ -30,6 +30,10 @@ readonly class DirectorySource
                 continue;
             }
 
+            if ($name == 'README.html') {
+                continue;
+            }
+
             if ($child->isDir()) {
                 $contents[0][] = new MediaContentItem($name, $name.'/', null, null);
 
@@ -61,6 +65,16 @@ readonly class DirectorySource
         unset($group);
 
         return $contents;
+    }
+
+    public function getReadmeHtml(): ?string
+    {
+        $readmePath = $this->path.'/README.html';
+        if (!file_exists($readmePath)) {
+            return null;
+        }
+
+        return file_get_contents($readmePath);
     }
 
     private function getMimeType(string $itemPath): ?string

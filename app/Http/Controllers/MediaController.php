@@ -31,10 +31,14 @@ class MediaController extends Controller
 
         $this->ensurePathCanonical($request, true);
 
+        $source = $this->getSourceForPath($filesystemPath);
+
         return view('media.index', [
             'path' => $path,
             'breadcrumbs' => $this->getCrumbsForPath($path),
-            'contents' => $this->getPathContents($filesystemPath),
+            'readme' => $source->getReadmeHtml(),
+            // TODO: Pagination
+            'contents' => $source->getContents(),
         ]);
     }
 
@@ -111,11 +115,9 @@ class MediaController extends Controller
         return $crumbs;
     }
 
-    private function getPathContents(string $filesystemPath): array
+    private function getSourceForPath(string $filesystemPath): DirectorySource
     {
-        $source = new DirectorySource($filesystemPath);
-
-        // TODO: Pagination.
-        return $source->getContents();
+        // TODO
+        return new DirectorySource($filesystemPath);
     }
 }

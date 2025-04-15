@@ -4,7 +4,7 @@ Web-based media viewer
 
 ## Project Plan
 
-* [ ] Filesystem-driven structure
+* [x] Filesystem-driven structure
 * [ ] Per-directory-tree modular render classes
   * For structure:
     * [ ] Standard - filesystem hierarchy
@@ -13,7 +13,7 @@ Web-based media viewer
     * [ ] Grouped by type
     * [ ] Chronological (for Telegram)
   * [ ] Extensions to client-side JS
-* [ ] Inline README rendering
+* [x] Inline README rendering
 * [ ] Pagination would be nice to control HTML size
 * Background queue tasks:
   * [ ] Thumbnail generation
