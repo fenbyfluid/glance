@@ -19,7 +19,7 @@ Web-based media viewer
   * [ ] Thumbnail generation
   * [ ] Timeline preview generation
   * [ ] `whos-that-bean` facial recognition
-  * [ ] `phash` generation
+  * [x] `phash` generation
 * [ ] `phash` lookup in StashDB
 * [x] Real-time streaming
   * [x] Static file streaming

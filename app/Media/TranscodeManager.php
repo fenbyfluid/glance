@@ -27,7 +27,7 @@ readonly class TranscodeManager
 
     public function getPlaylistResponse(string $baseUrl): Response
     {
-        $mediaInfo = MediaInfo::probeFile($this->filesystemPath);
+        $mediaInfo = new MediaFile($this->filesystemPath)->probe();
 
         $playlist = implode(PHP_EOL, [
             '#EXTM3U',
