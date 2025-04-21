@@ -12,6 +12,16 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\URL;
 
+/**
+ * @property int $id
+ * @property string|null $username
+ * @property string|null $password
+ * @property string|null $remember_token
+ * @property string $note
+ * @property bool $is_admin
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ */
 class User extends Model implements AuthenticatableContract, AuthorizableContract
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */

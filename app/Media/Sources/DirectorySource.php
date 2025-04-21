@@ -4,6 +4,7 @@ namespace App\Media\Sources;
 
 use App\Media\MediaContentItem;
 use DirectoryIterator;
+use Illuminate\Support\Facades\Gate;
 
 readonly class DirectorySource
 {
@@ -15,7 +16,7 @@ readonly class DirectorySource
     //       than re-parsing files, and augments it with long-term configured metadata.
     public function getContents(): array
     {
-        $iterator = new DirectoryIterator($this->path);
+        $iterator = new DirectoryIterator(config('media.path').'/'.$this->path);
 
         $contents = [[], []];
         foreach ($iterator as $child) {
@@ -35,7 +36,9 @@ readonly class DirectorySource
             }
 
             if ($child->isDir()) {
-                $contents[0][] = new MediaContentItem($name, $name.'/', null, null);
+                if (Gate::allows('view-media', $this->path.'/'.$name)) {
+                    $contents[0][] = new MediaContentItem($name, $name.'/', null, null);
+                }
 
                 continue;
             }
@@ -69,7 +72,7 @@ readonly class DirectorySource
 
     public function getReadmeHtml(): ?string
     {
-        $readmePath = $this->path.'/README.html';
+        $readmePath = config('media.path').'/'.$this->path.'/README.html';
         if (!file_exists($readmePath)) {
             return null;
         }
@@ -97,7 +100,7 @@ readonly class DirectorySource
                 'skip' => 15.0,
             ];
 
-            $configPath = $this->path.'/viewer_config.json';
+            $configPath = config('media.path').'/'.$this->path.'/viewer_config.json';
             if (file_exists($configPath)) {
                 $config = json_decode(file_get_contents($configPath), true) + $config;
             }

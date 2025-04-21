@@ -6,8 +6,10 @@ use App\Media\Sources\DirectorySource;
 use App\Media\TranscodeManager;
 use App\Utilities\Path;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class MediaController extends Controller
 {
@@ -15,7 +17,7 @@ class MediaController extends Controller
     {
         $path = Path::resolve($unsafePath);
 
-        // TODO: Access control checks on $path
+        Gate::authorize('view-media', $path);
 
         $filesystemPath = config('media.path').'/'.$path;
 
@@ -31,7 +33,7 @@ class MediaController extends Controller
 
         $this->ensurePathCanonical($request, true);
 
-        $source = $this->getSourceForPath($filesystemPath);
+        $source = $this->getSourceForPath($path);
 
         return view('media.index', [
             'path' => $path,
@@ -55,7 +57,7 @@ class MediaController extends Controller
         $path = $matches[1];
         $segment = ($matches[2] !== null) ? (int) $matches[2] : null;
 
-        // TODO: Access control checks on $path
+        Gate::authorize('view-media', $path);
 
         $filesystemPath = config('media.path').'/'.$path;
 
@@ -71,6 +73,29 @@ class MediaController extends Controller
         } else {
             return $transcodeManager->getSegmentResponse($segment);
         }
+    }
+
+    public function handleHttpException(Request $request, HttpException $exception): ?Response
+    {
+        $route = $request->route();
+        if ($route?->getActionName() !== __CLASS__.'@index') {
+            return null;
+        }
+
+        $path = Path::resolve($route->parameter('path'));
+
+        $statusCode = $exception->getStatusCode();
+        $message = $exception->getMessage() ?:
+            Response::$statusTexts[$statusCode] ??
+            sprintf('Error %03d', $statusCode);
+
+        // TODO: Create a specific error view
+        return response(view('media.index', [
+            'path' => $path,
+            'breadcrumbs' => $this->getCrumbsForPath($path),
+            'readme' => $message,
+            'contents' => [],
+        ]), $statusCode);
     }
 
     private function ensurePathCanonical(Request $request, bool $needsTrailingSlash): void
@@ -115,9 +140,9 @@ class MediaController extends Controller
         return $crumbs;
     }
 
-    private function getSourceForPath(string $filesystemPath): DirectorySource
+    private function getSourceForPath(string $path): DirectorySource
     {
         // TODO
-        return new DirectorySource($filesystemPath);
+        return new DirectorySource($path);
     }
 }

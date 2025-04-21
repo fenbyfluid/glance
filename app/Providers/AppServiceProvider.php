@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\User;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
@@ -28,8 +29,13 @@ class AppServiceProvider extends ServiceProvider
             BinaryFileResponse::trustXSendfileTypeHeader();
         }
 
-        Gate::define('admin', function ($user) {
+        Gate::define('admin', function (User $user) {
             return $user->is_admin;
+        });
+
+        Gate::define('view-media', function (User $user, string $path) {
+            // TODO: Implement access control checks
+            return true;
         });
     }
 }
