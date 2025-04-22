@@ -27,7 +27,9 @@ readonly class TranscodeManager
 
     public function getPlaylistResponse(string $baseUrl): Response
     {
-        $mediaInfo = new MediaFile($this->filesystemPath)->probe();
+        $mediaInfo = app('clockwork')->event('Probing media file')->run(function () {
+            return new MediaFile($this->filesystemPath)->probe();
+        });
 
         $playlist = implode(PHP_EOL, [
             '#EXTM3U',
@@ -103,6 +105,8 @@ readonly class TranscodeManager
         if (!$segmentExists) {
             abort(503);
         }
+
+        config(['clockwork.enable' => false]);
 
         return response()
             ->file($segmentPath, ['Content-Type' => 'video/MP2T'])

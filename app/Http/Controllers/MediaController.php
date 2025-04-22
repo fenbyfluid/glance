@@ -29,6 +29,8 @@ class MediaController extends Controller
         if (is_file($filesystemPath)) {
             $this->ensurePathCanonical($request, false);
 
+            config(['clockwork.enable' => false]);
+
             return response()->file($filesystemPath)->setPrivate();
         }
 

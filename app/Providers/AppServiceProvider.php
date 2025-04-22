@@ -37,5 +37,10 @@ class AppServiceProvider extends ServiceProvider
             // TODO: Implement access control checks
             return true;
         });
+
+        // Ignore cache hits in the Clockwork trace (they're quick).
+        app('clockwork.cache')->addFilter(function ($record) {
+            return $record['type'] !== 'hit';
+        });
     }
 }
