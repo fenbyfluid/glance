@@ -18,7 +18,7 @@ readonly class DirectorySource
     {
         $iterator = new DirectoryIterator(config('media.path').'/'.$this->path);
 
-        $contents = [[], []];
+        $contents = [];
         foreach ($iterator as $child) {
             $name = $child->getFilename();
 
@@ -37,7 +37,7 @@ readonly class DirectorySource
 
             if ($child->isDir()) {
                 if (Gate::allows('view-media', $this->path.'/'.$name)) {
-                    $contents[0][] = new MediaContentItem($name, $name.'/', null, null);
+                    $contents[] = new MediaContentItem($name.'/', null, null);
                 }
 
                 continue;
@@ -53,19 +53,8 @@ readonly class DirectorySource
                 continue;
             }
 
-            $contents[1][] = new MediaContentItem($name, $name, $this->getMimeType($itemPath), $this->getThumbnailWebPath($itemPath));
+            $contents[] = new MediaContentItem($name, $this->getMimeType($itemPath), $this->getThumbnailWebPath($itemPath));
         }
-
-        foreach ($contents as $i => &$group) {
-            if (empty($group)) {
-                unset($contents[$i]);
-
-                continue;
-            }
-
-            usort($group, fn ($a, $b) => strnatcasecmp($a->label, $b->label));
-        }
-        unset($group);
 
         return $contents;
     }

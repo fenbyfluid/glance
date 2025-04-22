@@ -9,7 +9,7 @@ import $ from './jquery-global.js';
 import '@fancyapps/fancybox';
 
 function logFancyboxState(label, current) {
-    console.log(label, (current !== undefined) ? JSON.parse(JSON.stringify(current, (k, v) => k.startsWith('$') ? v.prop('outerHTML') : v)) : current);
+    console.log(label, (current !== undefined) ? JSON.parse(JSON.stringify(current, (k, v) => (v && k.startsWith('$')) ? v.prop('outerHTML') : v)) : current);
 }
 
 async function startHlsVideo(element) {
@@ -78,11 +78,43 @@ async function startHlsVideo(element) {
     return hls;
 }
 
+// TODO: The `thumbs` button loads all of the thumbnails on the page, work out how to make it lazy.
+
 $.fancybox.defaults = {
     ...$.fancybox.defaults,
-    buttons: ['download', 'share', 'thumbs', 'close'],
     onInit: function(instance) {
         console.log('onInit');
+
+        // Avoid stripping out all but first child of ajax-loaded HTML, add white-space CSS for plain text.
+        const originalSetContent = instance.setContent;
+        instance.setContent = function(slide, content) {
+            if (typeof content !== 'string') {
+                return originalSetContent.call(this, slide, content);
+            }
+
+            const contentKind = slide.opts.$orig?.attr('data-kind');
+
+            if (contentKind === 'text') {
+                content = $('<div class="prose" style="white-space: pre-wrap;"></div>')
+                    .text(content)
+                    .wrap('<div></div>')
+                    .parent();
+            } else if (contentKind === 'html') {
+                content = $('<div class="prose"></div>')
+                    .html(content)
+                    .wrap('<div></div>')
+                    .parent();
+            } else if (contentKind === 'audio') {
+                slide.type = 'ajax';
+                slide.contentType = 'html';
+                content = $('<audio controls autoplay style="width: 100%;"></audio>')
+                    .attr('src', slide.src)
+                    .wrap('<div style="background: none; width: 60%"></div>')
+                    .parent();
+            }
+
+            return originalSetContent.call(this, slide, content);
+        };
     },
     beforeLoad: function(instance, current) {
         logFancyboxState('beforeLoad', current);
@@ -93,7 +125,7 @@ $.fancybox.defaults = {
             // TODO: Use a named route somehow, account for the base path.
             src.pathname = '/_stream' + src.pathname + '.m3u8';
 
-            const srcType = current.$thumb.attr('data-mime');
+            const srcType = current.opts.$orig?.attr('data-mime');
 
             current.opts.video.tpl = current.opts.video.tpl
                 .replace('{{src_type}}', srcType ? `type="${srcType.replaceAll('"', '&quot;')}"` : '')
@@ -146,12 +178,10 @@ $.fancybox.defaults = {
 
         // TODO
     },
-    // TODO: This is copied from the old code and avoids everything being an image (actual images seemingly remain
-    //       images), but we probably want to have the PHP side inform us of the actual type per-link. Even in that
-    //       case, using 'video' here as the default might make sense to reduce HTML size (as apparently we'd only
-    //       need to specify things that are neither images nor videos).
-    // TODO: The automatic type discovery code is very crude.
-    defaultType: 'video',
+    buttons: ['download', 'share', 'thumbs', 'close'],
+    smallBtn: false,
+    wheel: false,
+    defaultType: 'iframe',
     video: {
       tpl:
         '<video class="fancybox-video" controls autoplay poster="{{poster}}">' +

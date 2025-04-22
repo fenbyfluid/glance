@@ -31,18 +31,29 @@
 
     <div>
         @foreach($contents as $group)
-            <div class="my-12 sm:px-6 lg:px-8 gap-4 grid grid-cols-[repeat(auto-fill,320px)] justify-center">
+            <div class="my-8 sm:px-6 lg:px-8 gap-4 grid grid-cols-[repeat(auto-fill,320px)] justify-center">
                 @foreach($group as $content)
-                    <a {!! isset($content->thumbnail) ? 'data-fancybox="thumbnails"' : '' !!} href="{{ media_url($path.'/'.$content->path) }}" class="block bg-white dark:bg-gray-800 overflow-hidden shadow-xs sm:rounded-lg">
-                        @isset($content->thumbnail)
+                    <a
+                        href="{{ media_url($path.'/'.$content->path) }}"
+                        class="block bg-white dark:bg-gray-800 overflow-hidden shadow-xs sm:rounded-lg"
+                        {!! $content->kind->lightboxType() ? 'data-fancybox="file" data-type="'.htmlspecialchars($content->kind->lightboxType()).'"' : '' !!}
+                        {!! $content->kind ? 'data-kind="'.htmlspecialchars($content->kind->value).'"' : '' !!}
+                        {!! isset($content->mimeType) ? 'data-mime="'.htmlspecialchars($content->mimeType).'"' : '' !!}
+                    >
+                        <div class="px-5 py-4 truncate text-gray-900 dark:text-gray-100">
+                            {{ $content->label }}
+                            @if($content->kind === \App\Media\MediaContentKind::Directory)
+                                {{-- TODO: De-dupe these icons (this is the slash from above) --}}
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="inline align-text-top size-5 text-gray-400 dark:text-grey-600">
+                                    <path fill-rule="evenodd" d="M10.074 2.047a.75.75 0 0 1 .449.961L6.705 13.507a.75.75 0 0 1-1.41-.513L9.113 2.496a.75.75 0 0 1 .961-.449Z" clip-rule="evenodd" />
+                                </svg>
+                            @endif
+                        </div>
+                        @if($content->kind->canThumbnail())
                             <div class="bg-black">
-                                <img class="mx-auto w-auto h-[180px]" loading="lazy" src="{{ $content->thumbnail }}" alt="{{ $content->label }}" {!! isset($content->mimeType) ? 'data-mime="'.htmlspecialchars($content->mimeType).'"' : '' !!} />
+                                <img class="mx-auto w-auto h-[180px]" loading="lazy" src="{{ $content->thumbnail ?? '' }}" alt="{{ $content->label }}" />
                             </div>
-                        @else
-                            <div class="p-6 truncate text-gray-900 dark:text-gray-100">
-                                {{ $content->label }}
-                            </div>
-                        @endisset
+                        @endif
                     </a>
                 @endforeach
             </div>

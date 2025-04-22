@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Media\MediaContentKind;
 use App\Media\Sources\DirectorySource;
 use App\Media\TranscodeManager;
 use App\Utilities\Path;
@@ -35,12 +36,39 @@ class MediaController extends Controller
 
         $source = $this->getSourceForPath($path);
 
+        $contents = app('clockwork')->event('Getting contents')->run(function () use ($source) {
+            // TODO: How do we handle pagination?
+            return $source->getContents();
+        });
+
+        // TODO: This needs to be an option per-directory.
+        $grouped = app('clockwork')->event('Grouping contents')->run(function () use ($contents) {
+            $grouped = array_fill_keys(array_map(fn ($case) => $case->value, MediaContentKind::cases()), []);
+
+            foreach ($contents as $content) {
+                $grouped[$content->kind->value][] = $content;
+            }
+
+            foreach ($grouped as $i => &$group) {
+                if (empty($group)) {
+                    unset($grouped[$i]);
+
+                    continue;
+                }
+
+                // TODO: Keeping the arrays sorted would be more efficient.
+                usort($group, fn ($a, $b) => strnatcasecmp($a->label, $b->label));
+            }
+            unset($group);
+
+            return $grouped;
+        });
+
         return view('media.index', [
             'path' => $path,
             'breadcrumbs' => $this->getCrumbsForPath($path),
             'readme' => $source->getReadmeHtml(),
-            // TODO: Pagination
-            'contents' => $source->getContents(),
+            'contents' => $grouped,
         ]);
     }
 
