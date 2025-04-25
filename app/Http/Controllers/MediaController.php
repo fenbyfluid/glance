@@ -18,7 +18,13 @@ class MediaController extends Controller
     {
         $path = Path::resolve($unsafePath);
 
-        Gate::authorize('view-media', $path);
+        // TODO: This isn't as nice as using a gate for it, but the alternative is a lot of awkward caching.
+        $accessControlInfo = $request->user()->getPathAccessInfo($path);
+
+        // User has no access to anything under here, nothing to do.
+        if (count(array_filter($accessControlInfo)) === 0) {
+            abort(404);
+        }
 
         $filesystemPath = config('media.path').'/'.$path;
 
@@ -27,6 +33,11 @@ class MediaController extends Controller
         }
 
         if (is_file($filesystemPath)) {
+            // For a file, only direct access is suitable.
+            if (!$accessControlInfo['']) {
+                abort(404);
+            }
+
             $this->ensurePathCanonical($request, false);
 
             config(['clockwork.enable' => false]);
@@ -36,7 +47,7 @@ class MediaController extends Controller
 
         $this->ensurePathCanonical($request, true);
 
-        $source = $this->getSourceForPath($path);
+        $source = $this->getSourceForPath($path, $accessControlInfo);
 
         $contents = app('clockwork')->event('Getting contents')->run(function () use ($source) {
             // TODO: How do we handle pagination?
@@ -87,7 +98,10 @@ class MediaController extends Controller
         $path = $matches[1];
         $segment = ($matches[2] !== null) ? (int) $matches[2] : null;
 
-        Gate::authorize('view-media', $path);
+        // TODO: This is the only use of this gate now, we do direct access checks in index.
+        if (!Gate::allows('view-media', $path)) {
+            abort(404);
+        }
 
         $filesystemPath = config('media.path').'/'.$path;
 
@@ -112,7 +126,7 @@ class MediaController extends Controller
             return null;
         }
 
-        $path = Path::resolve($route->parameter('path'));
+        $path = Path::resolve($route->parameter('path', ''));
 
         $statusCode = $exception->getStatusCode();
         $message = $exception->getMessage() ?:
@@ -170,9 +184,9 @@ class MediaController extends Controller
         return $crumbs;
     }
 
-    private function getSourceForPath(string $path): DirectorySource
+    private function getSourceForPath(string $path, array $accessControlInfo): DirectorySource
     {
         // TODO
-        return new DirectorySource($path);
+        return new DirectorySource($path, $accessControlInfo);
     }
 }

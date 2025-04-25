@@ -33,9 +33,13 @@ class AppServiceProvider extends ServiceProvider
             return $user->is_admin;
         });
 
+        // TODO: We probably need to split this up into "file" and "tree" variations, we need to be able to allow access
+        //       to browse the hierarchy if there is a visible sub-path without access to the files in the parent path.
+        // TODO: Only used by MediaController::stream() now, decide if we want the gate everywhere with caching instead.
         Gate::define('view-media', function (User $user, string $path) {
-            // TODO: Implement access control checks
-            return true;
+            $accessControlInfo = $user->getPathAccessInfo($path);
+
+            return $accessControlInfo[''];
         });
 
         // Ignore cache hits in the Clockwork trace (they're quick).

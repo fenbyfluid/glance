@@ -4,18 +4,21 @@ namespace App\Media\Sources;
 
 use App\Media\MediaContentItem;
 use DirectoryIterator;
-use Illuminate\Support\Facades\Gate;
 
 readonly class DirectorySource
 {
     private string $viewerConfigHash;
 
-    public function __construct(private string $path) {}
+    /**
+     * @param  array<string, bool>  $accessControlInfo
+     */
+    public function __construct(private string $path, private array $accessControlInfo) {}
 
     // TODO: At some point we'll want a hybrid provider that loads cached metadata rather
     //       than re-parsing files, and augments it with long-term configured metadata.
     public function getContents(): array
     {
+        $hasAccessToPath = $this->accessControlInfo[''];
         $iterator = new DirectoryIterator(config('media.path').'/'.$this->path);
 
         $contents = [];
@@ -35,10 +38,14 @@ readonly class DirectorySource
                 continue;
             }
 
+            // Skip if there is an override denying access, or if there is no override
+            // and the user doesn't have access to the current directory as a whole.
+            if (!($this->accessControlInfo[$name] ?? $hasAccessToPath)) {
+                continue;
+            }
+
             if ($child->isDir()) {
-                if (Gate::allows('view-media', $this->path.'/'.$name)) {
-                    $contents[] = new MediaContentItem($name.'/', null, null);
-                }
+                $contents[] = new MediaContentItem($name.'/', null, null);
 
                 continue;
             }

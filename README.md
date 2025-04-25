@@ -7,10 +7,10 @@ Web-based media viewer
 * [x] Filesystem-driven structure
 * [ ] Per-directory-tree modular render classes
   * For structure:
-    * [ ] Standard - filesystem hierarchy
+    * [x] Standard - filesystem hierarchy
     * [ ] Tumblr - post JSON
   * For rendering:
-    * [ ] Grouped by type
+    * [x] Grouped by type
     * [ ] Chronological (for Telegram)
   * [ ] Extensions to client-side JS
 * [x] Inline README rendering
@@ -25,6 +25,7 @@ Web-based media viewer
   * [x] Static file streaming
   * [x] Fallback to conversion
 * [x] User authentication
-* [ ] Directory tree authorization
+* [x] Directory tree authorization
+  * [ ] UI for managing authorization rules
 * [x] Static files must be authorized too (with Nginx)
 * [ ] Public link generation - directory or file
