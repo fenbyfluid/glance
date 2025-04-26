@@ -27,6 +27,9 @@
                             <x-nav-link :href="route('admin.users.index')" :active="request()->routeIs('admin.users.index')">
                                 {{ __('Manage Users') }}
                             </x-nav-link>
+                            <x-nav-link :href="route('admin.access.index')" :active="request()->routeIs('admin.access.index')">
+                                {{ __('Manage Access') }}
+                            </x-nav-link>
                         @endcan
                     @endisset
                 </div>
@@ -52,6 +55,9 @@
                             @can('admin')
                                 <x-dropdown-link :href="route('admin.users.index')">
                                     {{ __('Manage Users') }}
+                                </x-dropdown-link>
+                                <x-dropdown-link :href="route('admin.access.index')">
+                                    {{ __('Manage Access') }}
                                 </x-dropdown-link>
                             @endcan
                         @endisset

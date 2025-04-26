@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Models\User;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
@@ -24,6 +25,8 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Vite::useBuildDirectory('_build');
+
+        Model::preventLazyLoading(!$this->app->isProduction());
 
         if (config('media.trust_x_send_file', false)) {
             BinaryFileResponse::trustXSendfileTypeHeader();

@@ -17,6 +17,15 @@ use Illuminate\Support\Collection;
  */
 class AccessControlEntry extends Model
 {
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var list<string>
+     */
+    protected $fillable = [
+        'path',
+    ];
+
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class);
