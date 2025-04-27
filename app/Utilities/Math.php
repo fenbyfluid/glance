@@ -87,9 +87,27 @@ class Math
     }
 
     /**
+     * @param  array{int, int}  $a
+     * @param  array{int, int}  $b
+     * @return array{int, int}
+     */
+    public static function addUnsignedLongLong(array $a, array $b): array
+    {
+        $a[1] += $b[1];
+
+        $a[0] += $a[1] >> 32;
+        $a[1] &= 0xFFFFFFFF;
+
+        $a[0] += $b[0];
+        $a[0] &= 0xFFFFFFFF;
+
+        return $a;
+    }
+
+    /**
      * @param  list<int>  $bits
      */
-    public static function encodeHash(array $bits): string
+    public static function encodeBitsToHash(array $bits): string
     {
         $hash = '';
         foreach (array_chunk($bits, 32) as $byte) {
@@ -101,7 +119,7 @@ class Math
 
     public static function calculateHashHammingDistance(string $a, string $b): int
     {
-        return count(array_diff_assoc(self::decodeHash($a), self::decodeHash($b)));
+        return count(array_diff_assoc(self::decodeHashToBits($a), self::decodeHashToBits($b)));
     }
 
     /**
@@ -143,7 +161,7 @@ class Math
     /**
      * @return list<int>
      */
-    private static function decodeHash(string $hash): array
+    private static function decodeHashToBits(string $hash): array
     {
         return array_merge(...array_map(function (string $chunk): array {
             return str_split(str_pad(decbin(hexdec($chunk)), 32, '0', STR_PAD_LEFT));

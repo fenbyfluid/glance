@@ -89,6 +89,6 @@ readonly class VideoPerceptualHasher
             $bits[] = (int) ($pixel > $median);
         }
 
-        return Math::encodeHash($bits);
+        return Math::encodeBitsToHash($bits);
     }
 }
