@@ -91,4 +91,15 @@ class UserController extends Controller
             ->route('admin.users.index')
             ->with('status', 'user-deleted');
     }
+
+    public function impersonate(Request $request, ?User $user = null)
+    {
+        $request->session()->put('admin_impersonating_user', $user?->getKey());
+
+        if ($user) {
+            return redirect()->route('dashboard');
+        } else {
+            return redirect()->back();
+        }
+    }
 }

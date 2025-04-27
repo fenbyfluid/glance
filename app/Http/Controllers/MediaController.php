@@ -5,9 +5,9 @@ namespace App\Http\Controllers;
 use App\Media\MediaContentKind;
 use App\Media\Sources\DirectorySource;
 use App\Media\TranscodeManager;
+use App\Models\User;
 use App\Utilities\Path;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -18,8 +18,9 @@ class MediaController extends Controller
     {
         $path = Path::resolve($unsafePath);
 
-        // TODO: This isn't as nice as using a gate for it, but the alternative is a lot of awkward caching.
-        $accessControlInfo = $request->user()->getPathAccessInfo($path);
+        $user = $request->user();
+        $accessControlOverrideUser = $this->getAccessControlOverrideUser($request);
+        $accessControlInfo = ($accessControlOverrideUser ?? $user)->getPathAccessInfo($path);
 
         // User has no access to anything under here, nothing to do.
         if (count(array_filter($accessControlInfo)) === 0) {
@@ -82,6 +83,7 @@ class MediaController extends Controller
             'breadcrumbs' => $this->getCrumbsForPath($path),
             'readme' => $source->getReadmeHtml(),
             'contents' => $grouped,
+            'accessControlOverrideUser' => $accessControlOverrideUser,
         ]);
     }
 
@@ -98,8 +100,10 @@ class MediaController extends Controller
         $path = $matches[1];
         $segment = ($matches[2] !== null) ? (int) $matches[2] : null;
 
-        // TODO: This is the only use of this gate now, we do direct access checks in index.
-        if (!Gate::allows('view-media', $path)) {
+        $user = $request->user();
+        $accessControlOverrideUser = $this->getAccessControlOverrideUser($request);
+        $accessControlInfo = ($accessControlOverrideUser ?? $user)->getPathAccessInfo($path);
+        if (!$accessControlInfo['']) {
             abort(404);
         }
 
@@ -139,6 +143,7 @@ class MediaController extends Controller
             'breadcrumbs' => $this->getCrumbsForPath($path),
             'readme' => $message,
             'contents' => [],
+            'accessControlOverrideUser' => $this->getAccessControlOverrideUser($request),
         ]), $statusCode);
     }
 
@@ -188,5 +193,21 @@ class MediaController extends Controller
     {
         // TODO
         return new DirectorySource($path, $accessControlInfo);
+    }
+
+    private function getAccessControlOverrideUser(Request $request): ?User
+    {
+        /** @var User $user */
+        $user = $request->user();
+        if (!$user->is_admin) {
+            return null;
+        }
+
+        $impersonatingUserId = $request->session()->get('admin_impersonating_user');
+        if ($impersonatingUserId === null) {
+            return null;
+        }
+
+        return User::find($impersonatingUserId);
     }
 }

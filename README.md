@@ -26,6 +26,6 @@ Web-based media viewer
   * [x] Fallback to conversion
 * [x] User authentication
 * [x] Directory tree authorization
-  * [ ] UI for managing authorization rules
+  * [x] UI for managing authorization rules
 * [x] Static files must be authorized too (with Nginx)
 * [ ] Public link generation - directory or file

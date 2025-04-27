@@ -14,6 +14,9 @@ Route::middleware(['auth', 'activated'])->group(function () {
     Route::delete('/_profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
     Route::prefix('_admin')->name('admin.')->middleware(['can:admin'])->group(function () {
+        Route::post('/users/impersonate/{user?}', [UserController::class, 'impersonate'])
+            ->name('users.impersonate');
+
         Route::resource('users', UserController::class)->only([
             'index', 'create', 'store', 'edit', 'update', 'destroy',
         ]);
