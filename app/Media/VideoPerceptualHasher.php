@@ -5,46 +5,37 @@ namespace App\Media;
 use App\Utilities\Math;
 
 // Brilliantly, this is as fast as the native Go program
-// TODO: Add an .env option to optionally use the native phasher binary for bitexact hashes
+// TODO: Add an .env option to optionally use the native phasher binary for bit exact hashes
 readonly class VideoPerceptualHasher
 {
-    private const int SPRITE_ROWS = 5;
-
-    private const int SPRITE_COLUMNS = 5;
-
     private const int FRAME_WIDTH = 160;
 
-    private string $hash;
-
-    public function __construct(
-        private string $inputFile,
-    ) {}
-
-    public function hash(): string
+    public function hash(string $path): string
     {
-        if (isset($this->hash)) {
-            return $this->hash;
-        }
-
-        $mediaFile = new MediaFile($this->inputFile);
+        $mediaFile = new MediaFile($path);
         $mediaInfo = $mediaFile->probe();
 
         // Round the duration to match Stash
         $duration = round($mediaInfo->duration, 2);
 
-        $totalFrames = self::SPRITE_COLUMNS * self::SPRITE_ROWS;
+        // TODO: There is a proposal in Stash to set the number of frames used based on the video duration:
+        //       https://github.com/stashapp/stash/pull/4074, <=45s 2x2, <=90s 3x3, <=150s 4x4, else 5x5
+        // TODO: We're also interested in hashing images, where we probably want to share the hashSpriteImage logic.
+        $gridSize = 5;
+
+        // TODO: Re-work this to dispatch a batch of queue jobs, one per tile, then chain another to combine them.
+        //       This probably won't be as efficient as our fancy concurrency, but it'll be more standard code and
+        //       it'll work better with Laravel's job scheduling not liking long-running jobs.
         $spriteImage = $mediaFile->captureTiledFrameImage(
             $duration * 0.05,
-            ($duration * 0.9) / $totalFrames,
-            self::SPRITE_COLUMNS,
-            $totalFrames,
+            ($duration * 0.9) / ($gridSize * $gridSize),
+            $gridSize,
+            $gridSize * $gridSize,
             self::FRAME_WIDTH,
             -2,
         );
 
-        $this->hash = $this->hashSpriteImage($spriteImage);
-
-        return $this->hash;
+        return $this->hashSpriteImage($spriteImage);
     }
 
     private function hashSpriteImage(\GdImage $image): string
@@ -53,6 +44,7 @@ readonly class VideoPerceptualHasher
         //       It seems to be that goimagehasher's "Bilinear" resize method isn't actually standard bilinear.
         //       Suspiciously, it produces a very soft output, whereas bilinear scaling down is typically overly sharp.
         //       We can get within 2-8 hamming distance of the expected hash by using a gaussian resize method instead.
+        //       We mustn't submit hashes to StashDB unless we can be bit exact.
         $resized = imagescale($image, 64, 64, IMG_GAUSSIAN);
         if ($resized === false) {
             throw new \RuntimeException('Unable to resize image');
@@ -64,7 +56,7 @@ readonly class VideoPerceptualHasher
         //     'Content-Type' => 'image/bmp',
         // ]));
 
-        // Everything below here is bitexact to Stash's phasher binary
+        // Everything below here is bit exact to Stash's phasher binary
 
         $pixels = [];
         for ($y = 0; $y < 64; $y++) {

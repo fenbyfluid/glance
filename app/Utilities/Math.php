@@ -111,7 +111,7 @@ class Math
     {
         $hash = '';
         foreach (array_chunk($bits, 32) as $byte) {
-            $hash .= dechex(bindec(implode('', $byte)));
+            $hash .= str_pad(dechex(bindec(implode('', $byte))), 8, '0', STR_PAD_LEFT);
         }
 
         return $hash;

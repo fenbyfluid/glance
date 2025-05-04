@@ -27,9 +27,9 @@ class OpenSubtitlesHasherTest extends TestCase
         try {
             file_put_contents($temporaryPath, $data);
 
-            $hasher = new OpenSubtitlesHasher($temporaryPath);
+            $hash = (new OpenSubtitlesHasher)->hash($temporaryPath);
 
-            $this->assertEquals($expected, $hasher->hash());
+            $this->assertEquals($expected, $hash);
         } finally {
             if (file_exists($temporaryPath)) {
                 unlink($temporaryPath);

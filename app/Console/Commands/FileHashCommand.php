@@ -55,12 +55,11 @@ class FileHashCommand extends Command
                 $row = [basename($path)];
 
                 foreach ($methods as $method) {
-                    $hasher = match ($method) {
-                        'phash' => new VideoPerceptualHasher($path),
-                        'oshash' => new OpenSubtitlesHasher($path),
+                    $hash = match ($method) {
+                        'phash' => (new VideoPerceptualHasher)->hash($path),
+                        'oshash' => (new OpenSubtitlesHasher)->hash($path),
                     };
 
-                    $hash = $hasher->hash();
                     $row[] = $hash;
 
                     if ($method === 'phash' && $referenceHash !== null) {
@@ -74,12 +73,11 @@ class FileHashCommand extends Command
             foreach ($paths as $path) {
                 $line = '';
                 foreach ($methods as $method) {
-                    $hasher = match ($method) {
-                        'phash' => new VideoPerceptualHasher($path),
-                        'oshash' => new OpenSubtitlesHasher($path),
+                    $hash = match ($method) {
+                        'phash' => (new VideoPerceptualHasher)->hash($path),
+                        'oshash' => (new OpenSubtitlesHasher)->hash($path),
                     };
 
-                    $hash = $hasher->hash();
                     $line .= $hash.' ';
 
                     if ($method === 'phash' && $referenceHash !== null) {

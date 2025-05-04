@@ -30,4 +30,22 @@ enum MediaContentKind: string
             default => null,
         };
     }
+
+    public static function guessForFile(string $name, string $mimeType): self
+    {
+        $extension = strrchr($name, '.');
+        $type = strtok($mimeType, '/');
+
+        return match (true) {
+            $extension === 'f4v' || $extension === 'mp4' => self::Video,
+            $mimeType === 'application/vnd.rn-realmedia' => self::Video,
+            $mimeType === 'application/pdf' || $extension === 'pdf' => self::Pdf,
+            $mimeType === 'text/html' || $extension === 'html' => self::Html,
+            $type === 'video' => self::Video,
+            $type === 'audio' => self::Audio,
+            $type === 'image' => self::Image,
+            $type === 'text' => self::Text,
+            default => self::Other,
+        };
+    }
 }
