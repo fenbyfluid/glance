@@ -54,6 +54,12 @@ class IndexedFile extends Model
         return $this->save();
     }
 
+    public function requiresGeneration(): bool
+    {
+        // TODO: Check the MediaContentKind as well, otherwise we dispatch far too many IndexFileJobs.
+        return $this->phash === null;
+    }
+
     protected function casts(): array
     {
         return [
@@ -72,9 +78,9 @@ class IndexedFile extends Model
 
     private static function attributesForInfo(\SplFileInfo $info): array
     {
-        $realPath = $info->getRealPath();
-        $mimeType = mime_content_type($realPath);
-        $osHash = (new OpenSubtitlesHasher)->hash($realPath);
+        $filePath = $info->getPathname();
+        $mimeType = mime_content_type($filePath);
+        $osHash = (new OpenSubtitlesHasher)->hash($filePath);
 
         return [
             'inode' => $info->getInode(),

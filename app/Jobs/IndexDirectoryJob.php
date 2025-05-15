@@ -19,6 +19,7 @@ class IndexDirectoryJob implements ShouldBeUnique, ShouldQueue
         public int $maxDepth,
         public bool $forceDirectoryTraversal,
         public bool $forceFileUpdate,
+        public bool $generateMissing,
         #[WithoutRelations]
         public ?IndexedDirectory $rootDirectory = null,
     ) {}
@@ -105,6 +106,7 @@ class IndexDirectoryJob implements ShouldBeUnique, ShouldQueue
                         $this->maxDepth - 1,
                         $this->forceDirectoryTraversal,
                         $this->forceFileUpdate,
+                        $this->generateMissing,
                         $childDirectory,
                     );
                 }
@@ -120,7 +122,7 @@ class IndexDirectoryJob implements ShouldBeUnique, ShouldQueue
             /** @var IndexedFile $childFile */
             $childFile = $fileEntries->pull($childName);
 
-            if ($childFile && !$this->forceFileUpdate && !$childFile->isIndexOutdated($childInfo)) {
+            if ($childFile && (!$this->forceFileUpdate && !$childFile->isIndexOutdated($childInfo)) && (!$this->generateMissing && !$childFile->requiresGeneration())) {
                 continue;
             }
 
@@ -130,9 +132,16 @@ class IndexDirectoryJob implements ShouldBeUnique, ShouldQueue
             $newFileJobs[] = new IndexFileJob(
                 $childPath,
                 $this->rootDirectory,
+                $this->forceFileUpdate,
                 $childFile,
             );
         }
+
+        // TODO: We maybe need to handle deletions first to correctly deal with moves (as we should only
+        //       consider an exact OSHash match a move if the original was deleted when we find a file).
+        //       Alternatively, maybe it would be more efficient to do an extra stat to check at the time
+        //       of entry? But then we'd need to check the DB in IndexFileJob for any existing OSHashes
+        //       (which might even be legitimate duplicates on disk!). We probably can't just trust inodes.
 
         foreach ($fileEntries as $fileEntry) {
             // TODO: Switch this to a soft delete when we update everything else to work with them.
@@ -144,13 +153,18 @@ class IndexDirectoryJob implements ShouldBeUnique, ShouldQueue
             $directoryEntry->forceDelete();
         }
 
+        // TODO: We'd like to split IndexFileJob and IndexDirectoryJob onto different queues so that all directory
+        //       index jobs happen with a priority ahead of file indexing jobs (gives us a more complete total job
+        //       estimation). Unfortunately, a batch can only contain jobs on one queue. One idea would be to create
+        //       a 2nd batch to contain the file indexing jobs and hold a reference to it as part of the directory
+        //       indexing jobs. Callers would need to monitor both, but that's not too bad.
         if ($jobBatch) {
             $jobBatch = $jobBatch->fresh();
             if (!$jobBatch?->cancelled()) {
-                $jobBatch->add([...$newFileJobs, ...$newDirectoryJobs]);
+                $jobBatch->add([...$newDirectoryJobs, ...$newFileJobs]);
             }
         } else {
-            foreach ([...$newFileJobs, ...$newDirectoryJobs] as $job) {
+            foreach ([...$newDirectoryJobs, ...$newFileJobs] as $job) {
                 dispatch($job)->onConnection($this->connection)->onQueue($this->queue);
             }
         }

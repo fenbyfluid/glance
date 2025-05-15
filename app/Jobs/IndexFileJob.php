@@ -3,7 +3,6 @@
 namespace App\Jobs;
 
 use App\Media\MediaContentKind;
-use App\Media\VideoPerceptualHasher;
 use App\Models\IndexedDirectory;
 use App\Models\IndexedFile;
 use Illuminate\Bus\Batchable;
@@ -20,6 +19,7 @@ class IndexFileJob implements ShouldBeUnique, ShouldQueue
         public string $path,
         #[WithoutRelations]
         public IndexedDirectory $parentDirectory,
+        public bool $forceUpdate,
         #[WithoutRelations]
         public ?IndexedFile $fileEntry = null,
     ) {}
@@ -48,17 +48,27 @@ class IndexFileJob implements ShouldBeUnique, ShouldQueue
         ], $fileInfo);
 
         // TODO: See event note in \App\Models\IndexedFile::updateWithInfo
-        $needsGeneration = $this->fileEntry->wasRecentlyCreated;
-        if (!$needsGeneration) {
-            $this->fileEntry->updateWithInfo($fileInfo);
-            $needsGeneration = $this->fileEntry->wasChanged('phash');
+        $requiresGeneration = $this->fileEntry->wasRecentlyCreated;
+        if (!$requiresGeneration) {
+            if ($this->forceUpdate || $this->fileEntry->isIndexOutdated($fileInfo)) {
+                $this->fileEntry->updateWithInfo($fileInfo);
+            }
+
+            $requiresGeneration = $this->fileEntry->requiresGeneration();
         }
 
-        if (!$needsGeneration) {
+        if (!$requiresGeneration) {
             return;
         }
 
-        // TODO: Dispatch PHash generation for videos.
-        dump($this->path.' needs generation');
+        // TODO: It probably makes sense to store this in the DB for later filtering.
+        $mediaContentKind = MediaContentKind::guessForFile($this->fileEntry->name, $this->fileEntry->mime_type);
+
+        // TODO: Consider moving this into IndexedFile so it can be close to the requiresGeneration() logic.
+        match ($mediaContentKind) {
+            MediaContentKind::Image => GenerateFilePerceptualHashJob::jobChainForImageFile($this->fileEntry, $this->path)->dispatch(),
+            MediaContentKind::Video => GenerateFilePerceptualHashJob::jobChainForVideoFile($this->fileEntry, $this->path)->dispatch(),
+            default => null,
+        };
     }
 }

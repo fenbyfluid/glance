@@ -54,6 +54,8 @@ readonly class MediaInfo
      */
     public static function fromProbeOutput(object $output): self
     {
+        // TODO: The duration property might not exist, requiring us to fall back to other methods.
+
         // This is simply what our old streaming code used to do.
         if (!self::USE_ACCURATE_DURATION) {
             // Media container duration.
