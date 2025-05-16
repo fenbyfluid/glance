@@ -72,6 +72,18 @@ return [
             'after_commit' => true,
         ],
 
+        // Same as redis but with block_for set, only safe to use with workers listening to a single queue.
+        // In our Horizon config, we use this for the default supervisor, and disable sleeping on those workers.
+        // This reduces our queue latency noticeably, which speeds up transcoding starting.
+        'redis_blocking' => [
+            'driver' => 'redis',
+            'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
+            'queue' => env('REDIS_QUEUE', 'default'),
+            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
+            'block_for' => 3,
+            'after_commit' => true,
+        ],
+
     ],
 
     /*

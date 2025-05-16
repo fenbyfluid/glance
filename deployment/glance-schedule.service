@@ -1,0 +1,12 @@
+[Unit]
+After=nginx.service
+After=valkey.service
+After=mariadb.service
+
+[Service]
+User=apache
+Group=apache
+ExecStart=/usr/bin/php ./artisan schedule:run
+PrivateTmp=true
+WorkingDirectory=/usr/local/src/glance
+Nice=10

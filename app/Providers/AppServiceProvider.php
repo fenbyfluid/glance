@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Horizon\Horizon;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class AppServiceProvider extends ServiceProvider
@@ -43,6 +44,10 @@ class AppServiceProvider extends ServiceProvider
 
         Gate::define('admin', function (User $user) {
             return $user->is_admin;
+        });
+
+        Horizon::auth(function ($request) {
+            return Gate::check('admin', [$request->user()]);
         });
 
         // Ignore cache hits in the Clockwork trace (they're quick).

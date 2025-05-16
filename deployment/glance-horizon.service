@@ -1,0 +1,16 @@
+[Unit]
+After=nginx.service
+After=valkey.service
+After=mariadb.service
+
+[Service]
+User=apache
+Group=apache
+Restart=always
+ExecStart=/usr/bin/php ./artisan horizon
+PrivateTmp=true
+WorkingDirectory=/usr/local/src/glance
+Nice=10
+
+[Install]
+RequiredBy=multi-user.target
