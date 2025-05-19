@@ -14,7 +14,7 @@ class MediaContentItem
                 return str_ends_with($this->path, '/') ? MediaContentKind::Directory : MediaContentKind::Other;
             }
 
-            return MediaContentKind::guessForFile(basename($this->path), $this->mimeType);
+            return MediaContentKind::guessForFile($this->mimeType, strrchr(basename($this->path), '.'));
         }
     }
 

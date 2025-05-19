@@ -10,13 +10,24 @@ enum MediaContentKind: string
     case Text = 'text';
     case Html = 'html';
     case Pdf = 'pdf';
+    case Archive = 'archive';
     case Audio = 'audio';
     case Image = 'image';
     case Video = 'video';
 
     public function canThumbnail(): bool
     {
-        return $this === self::Video || $this === self::Image;
+        return $this === self::Image || $this === self::Video;
+    }
+
+    public function canPerceptualHash(): bool
+    {
+        return $this === self::Image || $this === self::Video;
+    }
+
+    public function canProbeMediaInfo(): bool
+    {
+        return $this === self::Audio || $this === self::Image || $this === self::Video;
     }
 
     public function lightboxType(): ?string
@@ -31,16 +42,17 @@ enum MediaContentKind: string
         };
     }
 
-    public static function guessForFile(string $name, string $mimeType): self
+    public static function guessForFile(string $mimeType, string $extension): self
     {
-        $extension = strrchr($name, '.');
         $type = strtok($mimeType, '/');
 
         return match (true) {
             $extension === 'f4v' || $extension === 'mp4' => self::Video,
             $mimeType === 'application/vnd.rn-realmedia' => self::Video,
-            $mimeType === 'application/pdf' || $extension === 'pdf' => self::Pdf,
+            $mimeType === 'application/pdf' => self::Pdf,
             $mimeType === 'text/html' || $extension === 'html' => self::Html,
+            $mimeType === 'application/x-wine-extension-ini' => self::Text,
+            $mimeType === 'application/zip' || $mimeType === 'application/x-rar' => self::Archive,
             $type === 'video' => self::Video,
             $type === 'audio' => self::Audio,
             $type === 'image' => self::Image,

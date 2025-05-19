@@ -9,9 +9,6 @@ use Illuminate\Support\Facades\Process;
 
 class MediaTranscode
 {
-    // warning, error, fatal
-    private const string FFMPEG_LOG_LEVEL = 'fatal';
-
     private InvokedProcess $process;
 
     private int $oldestSegment;
@@ -29,7 +26,7 @@ class MediaTranscode
         ])->path($this->outputDirectory)->forever()->quietly()->start([
             config('media.ffmpeg_bin', '/usr/bin/ffmpeg'),
             '-loglevel',
-            '+repeat+level+'.self::FFMPEG_LOG_LEVEL,
+            '+repeat+level+'.config('media.ffmpeg_loglevel', 'fatal'),
             '-hide_banner',
             '-nostats',
             ...$this->getInputArguments(),

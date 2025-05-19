@@ -3,7 +3,7 @@
 namespace Tests\Unit\Utilities;
 
 use App\Utilities\Path;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 
 class PathTest extends TestCase
 {

@@ -4,7 +4,7 @@ namespace Tests\Unit\Utilities;
 
 use App\Utilities\Math;
 use PHPUnit\Framework\Attributes\TestWith;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 
 class MathTest extends TestCase
 {

@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use App\Casts\BinaryToHex;
+use App\Media\MediaContentKind;
+use App\Media\MediaInfo;
 use App\Media\OpenSubtitlesHasher;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -18,7 +20,9 @@ class IndexedFile extends Model
         'inode',
         'mtime',
         'size',
+        'kind',
         'mime_type',
+        'media_info',
         'oshash',
         'phash',
     ];
@@ -37,16 +41,16 @@ class IndexedFile extends Model
 
     public function updateWithInfo(\SplFileInfo $info): bool
     {
-        // TODO: We probably need some logic here to handle updating the name on moves too.
         $this->fill(self::attributesForInfo($info));
 
-        // If the file hash has changed, clear anything based on the contents.
-        if ($this->isDirty('oshash')) {
+        // If the file kind or hash has changed, clear anything based on the contents.
+        if ($this->isDirty(['kind', 'oshash'])) {
             // TODO: It probably makes sense for us to dispatch an event after save() if we've done this.
             //       It'll let us decouple the regeneration job dispatch from IndexFileJob.
             //       We should also dispatch that same event on created.
 
             $this->fill([
+                'media_info' => null,
                 'phash' => null,
             ]);
         }
@@ -56,13 +60,15 @@ class IndexedFile extends Model
 
     public function requiresGeneration(): bool
     {
-        // TODO: Check the MediaContentKind as well, otherwise we dispatch far too many IndexFileJobs.
-        return $this->phash === null;
+        return ($this->kind->canProbeMediaInfo() && $this->media_info === null) ||
+            $this->kind->canPerceptualHash() && $this->phash === null;
     }
 
     protected function casts(): array
     {
         return [
+            'kind' => MediaContentKind::class,
+            'media_info' => MediaInfo::class,
             'oshash' => BinaryToHex::withLength(8),
             'phash' => BinaryToHex::withLength(8),
         ];
@@ -80,12 +86,15 @@ class IndexedFile extends Model
     {
         $filePath = $info->getPathname();
         $mimeType = mime_content_type($filePath);
+        $mediaContentKind = MediaContentKind::guessForFile($mimeType, $info->getExtension());
         $osHash = (new OpenSubtitlesHasher)->hash($filePath);
 
         return [
+            'name' => $info->getFilename(),
             'inode' => $info->getInode(),
             'mtime' => $info->getMTime(),
             'size' => $info->getSize(),
+            'kind' => $mediaContentKind,
             'mime_type' => $mimeType,
             'oshash' => $osHash,
         ];

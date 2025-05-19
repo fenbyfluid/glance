@@ -5,12 +5,11 @@ namespace App\Jobs;
 use App\Models\IndexedDirectory;
 use App\Models\IndexedFile;
 use Illuminate\Bus\Batchable;
-use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Attributes\WithoutRelations;
 
-class IndexDirectoryJob implements ShouldBeUnique, ShouldQueue
+class IndexDirectoryJob implements ShouldQueue
 {
     use Batchable, Queueable;
 
@@ -23,12 +22,6 @@ class IndexDirectoryJob implements ShouldBeUnique, ShouldQueue
         #[WithoutRelations]
         public ?IndexedDirectory $rootDirectory = null,
     ) {}
-
-    public function uniqueId(): string
-    {
-        return hash('xxh128', $this->path).':'.
-            sprintf('%d%d%d', $this->forceDirectoryTraversal, $this->forceFileUpdate, $this->maxDepth);
-    }
 
     public function handle(): void
     {
@@ -122,7 +115,7 @@ class IndexDirectoryJob implements ShouldBeUnique, ShouldQueue
             /** @var IndexedFile $childFile */
             $childFile = $fileEntries->pull($childName);
 
-            if ($childFile && (!$this->forceFileUpdate && !$childFile->isIndexOutdated($childInfo)) && (!$this->generateMissing && !$childFile->requiresGeneration())) {
+            if ($childFile && (!$this->forceFileUpdate && !$childFile->isIndexOutdated($childInfo)) && (!$this->generateMissing || !$childFile->requiresGeneration())) {
                 continue;
             }
 

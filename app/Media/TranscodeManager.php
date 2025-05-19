@@ -27,9 +27,15 @@ readonly class TranscodeManager
 
     public function getPlaylistResponse(string $baseUrl): Response
     {
+        /** @var MediaInfo $mediaInfo */
         $mediaInfo = app('clockwork')->event('Probing media file')->run(function () {
-            return new MediaFile($this->filesystemPath)->probe();
+            return MediaInfo::probeFile($this->filesystemPath);
         });
+
+        // TODO: We actually want to fetch this from the DB rather than re-probing the file.
+        if ($mediaInfo->durationMs === null) {
+            throw new \RuntimeException('Cannot generate HLS playlist for video without duration');
+        }
 
         $playlist = implode(PHP_EOL, [
             '#EXTM3U',
@@ -39,7 +45,7 @@ readonly class TranscodeManager
             '#EXT-X-PLAYLIST-TYPE:VOD',
         ]);
 
-        $remainingDuration = $mediaInfo->duration;
+        $remainingDuration = $mediaInfo->durationMs / 1000;
         for ($i = 0; $remainingDuration > 0; $i++) {
             $playlist .= sprintf(PHP_EOL.'#EXTINF:%.7f,'.PHP_EOL.'%s/%d.ts',
                 min(self::HLS_SEGMENT_LENGTH, $remainingDuration),

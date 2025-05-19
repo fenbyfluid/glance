@@ -4,9 +4,9 @@ namespace Tests\Unit\Media;
 
 use App\Media\OpenSubtitlesHasher;
 use PHPUnit\Framework\Attributes\TestWith;
-use PHPUnit\Framework\TestCase;
 use Random\Engine\PcgOneseq128XslRr64;
 use Random\Randomizer;
+use Tests\TestCase;
 
 class OpenSubtitlesHasherTest extends TestCase
 {

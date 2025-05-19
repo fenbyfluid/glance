@@ -99,9 +99,9 @@ return [
     */
 
     'trim' => [
-        'recent' => 60,
-        'pending' => 60,
-        'completed' => 60,
+        'recent' => 1440,
+        'pending' => 1440,
+        'completed' => 1440,
         'recent_failed' => 10080,
         'failed' => 10080,
         'monitored' => 10080,
@@ -135,8 +135,8 @@ return [
 
     'metrics' => [
         'trim_snapshots' => [
-            'job' => 24,
-            'queue' => 24,
+            'job' => 288,
+            'queue' => 288,
         ],
     ],
 
@@ -197,7 +197,8 @@ return [
         ],
         'supervisor-indexing' => [
             'connection' => 'redis',
-            'queue' => ['index', 'generation-hash', 'generation-tile', 'ffmpeg-capture', 'ffmpeg-wait'],
+            // TODO: We'd like to split index into index-directory,index-file, see note in IndexDirectoryJob.
+            'queue' => ['index', 'ffprobe', 'generation-hash', 'generation-tile', 'ffmpeg-capture', 'ffmpeg-wait'],
             'balance' => false,
             'maxProcesses' => 4,
             'minProcesses' => 1,

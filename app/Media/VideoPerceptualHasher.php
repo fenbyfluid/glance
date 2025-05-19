@@ -2,8 +2,9 @@
 
 namespace App\Media;
 
-use App\Jobs\GenerateFilePerceptualHashJob;
+use App\Jobs\GenerateMediaFilePerceptualHashJob;
 use App\Utilities\Deferred;
+use Illuminate\Support\Facades\Bus;
 
 // Brilliantly, this is as fast as the native Go program
 readonly class VideoPerceptualHasher
@@ -13,9 +14,9 @@ readonly class VideoPerceptualHasher
     {
         $hash = new Deferred;
 
-        GenerateFilePerceptualHashJob::jobChainForVideoFile($hash, $path)
-            ->onConnection('sync')
-            ->dispatch();
+        Bus::chain([
+            new GenerateMediaFilePerceptualHashJob($hash, $path),
+        ])->onConnection('sync')->dispatch();
 
         return $hash->block();
     }
