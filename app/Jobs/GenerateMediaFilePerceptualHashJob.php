@@ -145,7 +145,7 @@ class GenerateMediaFilePerceptualHashJob implements ShouldQueue
         //       the image data in memory. But, it does avoid the cache pressure, if that was a problem.
 
         return [
-            Bus::batch($frameCaptureJobs)->onQueue('ffmpeg-capture'),
+            Bus::batch($frameCaptureJobs)->name('Capturing '.$path)->onQueue('ffmpeg-capture'),
             (new TileImagesJob($frameImages, $gridSize, $tileImage))->onQueue('generation-tile'),
             (new ComputePerceptualHashJob($tileImage, $outputObject))->onQueue('generation-hash'),
         ];

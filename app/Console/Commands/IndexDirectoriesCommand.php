@@ -59,16 +59,17 @@ class IndexDirectoriesCommand extends Command
 
             if ($async) {
                 // TODO: Add an option to resume showing progress for an existing async batch.
-                $this->handleAsync($job);
+                $this->handleAsync($job, $path);
             } else {
                 $this->handleSync($job, $path);
             }
         }
     }
 
-    private function handleAsync(IndexDirectoryJob $job): void
+    private function handleAsync(IndexDirectoryJob $job, string $path): void
     {
         $batch = Bus::batch([$job])
+            ->name('Indexing '.$path)
             ->onQueue('index')
             ->allowFailures();
 

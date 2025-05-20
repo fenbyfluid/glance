@@ -25,8 +25,7 @@ class MediaTranscode
             'AV_LOG_FORCE_NOCOLOR' => '1',
         ])->path($this->outputDirectory)->forever()->quietly()->start([
             config('media.ffmpeg_bin', '/usr/bin/ffmpeg'),
-            '-loglevel',
-            '+repeat+level+'.config('media.ffmpeg_loglevel', 'fatal'),
+            '-loglevel', '+repeat+level+'.config('media.transcode_log_level', 'fatal'),
             '-hide_banner',
             '-nostats',
             ...$this->getInputArguments(),
@@ -57,6 +56,7 @@ class MediaTranscode
         // If it ended without a playlist, something failed.
         if (!$this->process->running()) {
             $result = $this->process->wait();
+
             throw new \RuntimeException(sprintf('Failed to start transcode with code %d', $result->exitCode()));
         }
     }

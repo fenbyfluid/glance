@@ -135,8 +135,8 @@ return [
 
     'metrics' => [
         'trim_snapshots' => [
-            'job' => 288,
-            'queue' => 288,
+            'job' => (12 * 60) / 5,
+            'queue' => (12 * 60) / 5,
         ],
     ],
 

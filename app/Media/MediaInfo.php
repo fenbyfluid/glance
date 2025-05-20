@@ -3,6 +3,7 @@
 namespace App\Media;
 
 use App\Casts\AsMediaInfo;
+use App\Exceptions\CommandFailedException;
 use App\Media\MediaInfo\StreamInfo;
 use App\Utilities\ArrayableWithoutNullValues;
 use DateTimeImmutable;
@@ -138,7 +139,7 @@ readonly class MediaInfo implements Arrayable, Castable
             'AV_LOG_FORCE_NOCOLOR' => '1',
         ])->timeout(config('media.ffprobe_timeout', 30))->run([
             config('media.ffprobe_bin', '/usr/bin/ffprobe'),
-            '-loglevel', '+repeat+level+'.config('media.ffprobe_loglevel', 'warning'),
+            '-loglevel', '+repeat+level+'.config('media.probe_log_level', 'warning'),
             '-hide_banner',
             '-output_format', 'json=compact=1',
             '-show_error',
@@ -156,22 +157,23 @@ readonly class MediaInfo implements Arrayable, Castable
             $output = null;
         }
 
-        $logs = $process->errorOutput();
+        $logs = rtrim($process->errorOutput());
 
         // TODO: Refine this error handling.
         if ($process->failed()) {
             if (isset($output['error']['string'])) {
-                throw new \RuntimeException(sprintf('FFprobe failed with code %d: %s',
-                    $output['error']['code'] ?? 0, $output['error']['string']));
+                $message = sprintf('FFprobe failed with code %d: %s',
+                    $output['error']['code'] ?? 0, $output['error']['string']);
             } else {
-                throw new \RuntimeException(sprintf('FFprobe failed with code %d:%s%s',
-                    $process->exitCode(), PHP_EOL, $logs));
+                $message = sprintf('FFprobe failed with code %d', $process->exitCode());
             }
+
+            throw new CommandFailedException($message, $process->command(), explode(PHP_EOL, $logs));
         }
 
-        if (strlen($logs) > 0) {
-            Log::debug('FFprobe output for "'.$path.'":'.PHP_EOL.$logs);
-        }
+        // if (strlen($logs) > 0) {
+        //     Log::debug('FFprobe output for "'.$path.'":'.PHP_EOL.$logs);
+        // }
 
         return MediaInfo::fromProbeOutput($output);
     }

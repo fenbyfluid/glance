@@ -2,11 +2,11 @@
 
 namespace App\Jobs;
 
+use App\Exceptions\CommandFailedException;
 use App\Utilities\Deferred;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 
 class CaptureFrameJob implements ShouldQueue
@@ -36,12 +36,12 @@ class CaptureFrameJob implements ShouldQueue
         //   100 iterations of webp took 52.543 seconds (0.525 each) and output (  328188 |  601194 ) bytes each
 
         $imageData = '';
+        $errorOutput = [];
         $result = Process::env([
             'AV_LOG_FORCE_NOCOLOR' => '1',
         ])->timeout(config('media.frame_capture_timeout', 30))->quietly()->run([
             config('media.ffmpeg_bin', '/usr/bin/ffmpeg'),
-            '-loglevel',
-            '+repeat+level+'.config('media.ffmpeg_loglevel', 'fatal'),
+            '-loglevel', '+repeat+level+'.config('media.frame_capture_log_level', 'warning'),
             '-hide_banner',
             '-nostats',
             '-fflags', '+genpts',
@@ -52,7 +52,7 @@ class CaptureFrameJob implements ShouldQueue
             '-c:v', 'png',
             '-f', 'rawvideo',
             '-',
-        ], function ($type, $buffer) use (&$imageData) {
+        ], function ($type, $buffer) use (&$imageData, &$errorOutput) {
             if ($type === 'out') {
                 $imageData .= $buffer;
 
@@ -62,7 +62,9 @@ class CaptureFrameJob implements ShouldQueue
             foreach (explode(PHP_EOL, $buffer) as $line) {
                 $line = rtrim($line);
                 if ($line !== '') {
-                    Log::debug('[ffmpeg-frame] '.$line);
+                    // Log::debug('[ffmpeg-frame] '.$line);
+
+                    $errorOutput[] = $line;
                 }
             }
         });
@@ -71,7 +73,7 @@ class CaptureFrameJob implements ShouldQueue
         if ($exitCode !== 0 || strlen($imageData) === 0) {
             $message = sprintf('Failed to extract frame image at time %f with code %d', $this->time, $exitCode);
 
-            throw new \RuntimeException($message);
+            throw new CommandFailedException($message, $result->command(), $errorOutput);
         }
 
         $this->outputImage->set($imageData);
