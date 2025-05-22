@@ -8,7 +8,7 @@ readonly class VideoStreamInfo extends StreamInfo
 
     public int $height;
 
-    public string $pixelFormat;
+    public ?string $pixelFormat;
 
     protected function fillFromArray(array $data): void
     {
@@ -16,6 +16,6 @@ readonly class VideoStreamInfo extends StreamInfo
 
         $this->width = $data['width'];
         $this->height = $data['height'];
-        $this->pixelFormat = $data['pixelFormat'];
+        $this->pixelFormat = $data['pixelFormat'] ?? null;
     }
 }

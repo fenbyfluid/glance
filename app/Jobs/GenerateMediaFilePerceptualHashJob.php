@@ -65,14 +65,6 @@ class GenerateMediaFilePerceptualHashJob implements ShouldQueue
                 throw new \LogicException('Unsupported kind: '.$kind);
         }
 
-        // Laravel has some non-intuitive behaviour where the queue worker only picks up jobs from a different priority
-        // queue once the queue it is currently working on has become exhausted. This means that we *must* dispatch a
-        // job to a lower-priority queue than ourselves, otherwise higher-priority jobs we dispatch (either directly or
-        // via chaining) do not preempt our sibling jobs being run, resulting in the capture queue becoming overloaded.
-        // To get around this, we're dispatched on the index queue directly (as we're cheap), and we start the chain
-        // with a job on the lowest priority queue to control the processing throughput. The job itself is a no-op.
-        $this->appendToChain((new WaitForFrameCaptureSlot)->onQueue('ffmpeg-wait'));
-
         // We append all the jobs to the current chain for the benefit of our app:hash command using sync.
         foreach ($jobs as $job) {
             $this->appendToChain($job);
@@ -145,6 +137,11 @@ class GenerateMediaFilePerceptualHashJob implements ShouldQueue
         //       the image data in memory. But, it does avoid the cache pressure, if that was a problem.
 
         return [
+            // There's a strange issue with multiple prioritised queues (seemingly only with Horizon) where a given worker
+            // will pull many jobs off of a low-priority queue before seeing that a higher priority queue has gained work
+            // items (queued by those low-priority jobs). We use this job to work around that, which we dispatch separately
+            // to avoid needing to load our IndexedFile from the DB each attempt.
+            (new WaitForFrameCaptureSlot)->onQueue('ffmpeg-wait'),
             Bus::batch($frameCaptureJobs)->name('Capturing '.$path)->onQueue('ffmpeg-capture'),
             (new TileImagesJob($frameImages, $gridSize, $tileImage))->onQueue('generation-tile'),
             (new ComputePerceptualHashJob($tileImage, $outputObject))->onQueue('generation-hash'),

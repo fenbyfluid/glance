@@ -20,6 +20,8 @@ readonly class MediaInfo implements Arrayable, Castable
     /** @var list<StreamInfo> */
     public array $streams;
 
+    public ?string $formatName;
+
     public ?int $durationMs;
 
     public ?int $bitRate;
@@ -40,6 +42,7 @@ readonly class MediaInfo implements Arrayable, Castable
     {
         $self = new self;
         $self->streams = array_map(StreamInfo::fromArray(...), $data['streams'] ?? []);
+        $self->formatName = $data['formatName'] ?? null;
         $self->durationMs = $data['durationMs'] ?? null;
         $self->bitRate = $data['bitRate'] ?? null;
         $self->title = $data['title'] ?? null;
@@ -121,6 +124,7 @@ readonly class MediaInfo implements Arrayable, Castable
 
         return self::fromArray([
             'streams' => array_map(MediaInfo\StreamInfo::fromProbeOutput(...), $data['streams'] ?? []),
+            'formatName' => $data['format']['format_name'] ?? null,
             'durationMs' => isset($data['format']['duration']) ? round($data['format']['duration'] * 1000) : null,
             'bitRate' => isset($data['format']['bit_rate']) ? (int) $data['format']['bit_rate'] : null,
             'title' => $formatTags['title'] ?? null,
