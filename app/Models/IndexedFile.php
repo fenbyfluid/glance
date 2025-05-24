@@ -6,13 +6,14 @@ use App\Casts\BinaryToHex;
 use App\Media\MediaContentKind;
 use App\Media\MediaInfo;
 use App\Media\OpenSubtitlesHasher;
+use App\Utilities\ScopeHavingAccess;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class IndexedFile extends Model
 {
-    use SoftDeletes;
+    use ScopeHavingAccess, SoftDeletes;
 
     protected $fillable = [
         'directory_id',

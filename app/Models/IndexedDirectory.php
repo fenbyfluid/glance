@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Utilities\ScopeHavingAccess;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -9,7 +10,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class IndexedDirectory extends Model
 {
-    use SoftDeletes;
+    use ScopeHavingAccess, SoftDeletes;
 
     protected $fillable = [
         'parent_id',

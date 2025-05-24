@@ -4,7 +4,6 @@ namespace App\Console\Commands;
 
 use App\Jobs\IndexDirectoryJob;
 use App\Utilities\Path;
-use Illuminate\Bus\BatchRepository;
 use Illuminate\Console\Command;
 use Illuminate\Console\OutputStyle;
 use Illuminate\Support\Facades\Bus;
@@ -68,19 +67,7 @@ class IndexDirectoriesCommand extends Command
 
     private function handleAsync(IndexDirectoryJob $job, string $path): void
     {
-        $batch = Bus::batch([$job])
-            ->name('Indexing '.$path)
-            ->onQueue('index')
-            ->allowFailures();
-
-        // Work around poor allowFailures() behaviour: https://github.com/laravel/framework/issues/36180
-        $batch->finally(function ($batch) {
-            if (!$batch->finished()) {
-                resolve(BatchRepository::class)->markAsFinished($batch->id);
-            }
-        });
-
-        $batch = $batch->dispatch();
+        $batch = $job->asBatch()->dispatch();
 
         $this->line('Batch ID: '.$batch->id);
 
@@ -106,7 +93,7 @@ class IndexDirectoriesCommand extends Command
             ->onConnection('sync')
             ->allowFailures();
 
-        $batch->progress(function ($batch) {
+        $batch->progress(static function ($batch) {
             // This unfortunate mess appears to be the only way to display a progress bar from a batch
             // callback. There's no equivalent of dispatch_sync, so these closures are always serialized
             // for queue dispatch, and accessing the normal command output doesn't work correctly.

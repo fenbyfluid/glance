@@ -2,12 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\IndexDirectoryJob;
 use App\Media\MediaContentKind;
 use App\Media\Sources\DirectorySource;
 use App\Media\TranscodeManager;
+use App\Models\IndexedDirectory;
 use App\Models\User;
 use App\Utilities\Path;
+use Illuminate\Bus\BatchRepository;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -29,11 +33,9 @@ class MediaController extends Controller
 
         $filesystemPath = config('media.path').'/'.$path;
 
-        if (!file_exists($filesystemPath)) {
-            abort(404);
-        }
+        $pathInfo = new \SplFileInfo($filesystemPath);
 
-        if (is_file($filesystemPath)) {
+        if ($pathInfo->isFile()) {
             // For a file, only direct access is suitable.
             if (!$accessControlInfo['']) {
                 abort(404);
@@ -46,12 +48,48 @@ class MediaController extends Controller
             return response()->file($filesystemPath)->setPrivate();
         }
 
+        if (!$pathInfo->isDir()) {
+            abort(404);
+        }
+
         $this->ensurePathCanonical($request, true);
 
-        $source = $this->getSourceForPath($path, $accessControlInfo);
+        /** @var IndexedDirectory $directoryEntry */
+        $directoryEntry = IndexedDirectory::where('path', $path)->first();
+
+        if (!$directoryEntry || $directoryEntry->isIndexOutdated($pathInfo)) {
+            $lockKey = __CLASS__.':index:'.hash('xxh128', $path);
+            $lock = Cache::lock($lockKey, 60);
+
+            $batchKey = $lockKey.':batch';
+
+            if ($lock->get()) {
+                $lockOwner = $lock->owner();
+                $batch = (new IndexDirectoryJob($path, 0, rootDirectory: $directoryEntry))
+                    ->asBatch()
+                    ->finally(function () use ($lockKey, $lockOwner) {
+                        Cache::restoreLock($lockKey, $lockOwner)->release();
+                    })->dispatch();
+
+                Cache::put($batchKey, $batch->id, 60);
+            } else {
+                $batch = resolve(BatchRepository::class)->find(Cache::get($batchKey));
+            }
+
+            return response($batch ?? '')->header('Refresh', '1');
+        }
+
+        // TODO: There are a few ideas here for implementing all the sorting and pagination in SQL land, and it's
+        //       very nearly good enough, but it's probably not worth the effort to get perfect.
+        //       Using two selects, with a +1 limit, and subtracting the count of the dirs from the limit for files
+        //       gets us the right amount with a canary for the next page. Using the FIELD() function with orderByRaw
+        //       gets us files sorted correctly by type ready for grouping. However, natural sorting is quite important
+        //       and doesn't appear to have any reasonable analogue. Our largest dir has about 2,500 children.
+
+        $source = $this->getSourceForPath($directoryEntry, $accessControlInfo);
 
         $contents = app('clockwork')->event('Getting contents')->run(function () use ($source) {
-            // TODO: How do we handle pagination?
+            // TODO: Paginate this.
             return $source->getContents();
         });
 
@@ -189,10 +227,10 @@ class MediaController extends Controller
         return $crumbs;
     }
 
-    private function getSourceForPath(string $path, array $accessControlInfo): DirectorySource
+    private function getSourceForPath(IndexedDirectory $indexedDirectory, array $accessControlInfo): DirectorySource
     {
         // TODO
-        return new DirectorySource($path, $accessControlInfo);
+        return new DirectorySource($indexedDirectory, $accessControlInfo);
     }
 
     private function getAccessControlOverrideUser(Request $request): ?User

@@ -5,9 +5,12 @@ namespace App\Jobs;
 use App\Models\IndexedDirectory;
 use App\Models\IndexedFile;
 use Illuminate\Bus\Batchable;
+use Illuminate\Bus\BatchRepository;
+use Illuminate\Bus\PendingBatch;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Attributes\WithoutRelations;
+use Illuminate\Support\Facades\Bus;
 
 class IndexDirectoryJob implements ShouldQueue
 {
@@ -16,12 +19,29 @@ class IndexDirectoryJob implements ShouldQueue
     public function __construct(
         public string $path,
         public int $maxDepth,
-        public bool $forceDirectoryTraversal,
-        public bool $forceFileUpdate,
-        public bool $generateMissing,
+        public bool $forceDirectoryTraversal = false,
+        public bool $forceFileUpdate = false,
+        public bool $generateMissing = false,
         #[WithoutRelations]
         public ?IndexedDirectory $rootDirectory = null,
     ) {}
+
+    public function asBatch(): PendingBatch
+    {
+        $batch = Bus::batch([$this])
+            ->name('Indexing '.$this->path)
+            ->onQueue('index')
+            ->allowFailures();
+
+        // Work around poor allowFailures() behaviour: https://github.com/laravel/framework/issues/36180
+        $batch->finally(function ($batch) {
+            if (!$batch->finished()) {
+                resolve(BatchRepository::class)->markAsFinished($batch->id);
+            }
+        });
+
+        return $batch;
+    }
 
     public function handle(): void
     {

@@ -3,7 +3,7 @@
 namespace App\Media\Sources;
 
 use App\Media\MediaContentItem;
-use DirectoryIterator;
+use App\Models\IndexedDirectory;
 
 readonly class DirectorySource
 {
@@ -12,55 +12,32 @@ readonly class DirectorySource
     /**
      * @param  array<string, bool>  $accessControlInfo
      */
-    public function __construct(private string $path, private array $accessControlInfo) {}
+    public function __construct(private IndexedDirectory $directoryEntry, private array $accessControlInfo) {}
 
-    // TODO: At some point we'll want a hybrid provider that loads cached metadata rather
-    //       than re-parsing files, and augments it with long-term configured metadata.
     public function getContents(): array
     {
-        $hasAccessToPath = $this->accessControlInfo[''];
-        $iterator = new DirectoryIterator(config('media.path').'/'.$this->path);
+        $childDirectoryEntries = $this->directoryEntry->children()->havingAccess($this->accessControlInfo)->get();
+        $childFileEntries = $this->directoryEntry->files()->havingAccess($this->accessControlInfo)->get();
 
         $contents = [];
-        foreach ($iterator as $child) {
-            $name = $child->getFilename();
 
-            if ($name[0] === '.') {
-                continue;
-            }
+        foreach ($childDirectoryEntries as $childDirectoryEntry) {
+            $contents[] = new MediaContentItem($childDirectoryEntry->name.'/', null, null);
+        }
 
+        foreach ($childFileEntries as $childFileEntry) {
             // TODO: These are legacy things.
-            if ($name === 'index.php' || $name === 'viewer_config.json' || str_starts_with($name, 'preview_')) {
+            if ($childFileEntry->name === 'index.php' || $childFileEntry->name === 'viewer_config.json') {
                 continue;
             }
 
-            if ($name == 'README.html') {
+            if ($childFileEntry->name == 'README.html') {
                 continue;
             }
 
-            // Skip if there is an override denying access, or if there is no override
-            // and the user doesn't have access to the current directory as a whole.
-            if (!($this->accessControlInfo[$name] ?? $hasAccessToPath)) {
-                continue;
-            }
+            $itemPath = config('media.path').'/'.$this->directoryEntry->path.'/'.$childFileEntry->name;
 
-            if ($child->isDir()) {
-                $contents[] = new MediaContentItem($name.'/', null, null);
-
-                continue;
-            }
-
-            // TODO: Deal with symlinks sanely.
-            if (!$child->isFile()) {
-                continue;
-            }
-
-            $itemPath = $child->getRealPath();
-            if ($itemPath === false) {
-                continue;
-            }
-
-            $contents[] = new MediaContentItem($name, $this->getMimeType($itemPath), $this->getThumbnailWebPath($itemPath));
+            $contents[] = new MediaContentItem($childFileEntry->name, $childFileEntry->mime_type, $this->getThumbnailWebPath($itemPath));
         }
 
         return $contents;
@@ -68,19 +45,12 @@ readonly class DirectorySource
 
     public function getReadmeHtml(): ?string
     {
-        $readmePath = config('media.path').'/'.$this->path.'/README.html';
+        $readmePath = config('media.path').'/'.$this->directoryEntry->path.'/README.html';
         if (!file_exists($readmePath)) {
             return null;
         }
 
         return file_get_contents($readmePath);
-    }
-
-    private function getMimeType(string $itemPath): ?string
-    {
-        $mimeType = mime_content_type($itemPath);
-
-        return ($mimeType !== false) ? $mimeType : null;
     }
 
     private function getThumbnailWebPath(string $path): ?string
@@ -96,7 +66,7 @@ readonly class DirectorySource
                 'skip' => 15.0,
             ];
 
-            $configPath = config('media.path').'/'.$this->path.'/viewer_config.json';
+            $configPath = config('media.path').'/'.$this->directoryEntry->path.'/viewer_config.json';
             if (file_exists($configPath)) {
                 $config = json_decode(file_get_contents($configPath), true) + $config;
             }
