@@ -22,5 +22,6 @@ class MediaContentItem
         readonly string $path,
         readonly public ?string $mimeType = null,
         readonly public ?string $thumbnail = null,
+        readonly public ?string $filmstrip = null,
     ) {}
 }

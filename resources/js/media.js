@@ -193,3 +193,95 @@ $.fancybox.defaults = {
       autoStart: false,
     },
 };
+
+document.addEventListener('DOMContentLoaded', function() {
+    /**
+     * @param {HTMLImageElement} thumbnailImage
+     */
+    function initFilmstrip(thumbnailImage) {
+        /** @type {HTMLImageElement|null} */
+        let filmstripImage = null;
+
+        const container = thumbnailImage.parentNode;
+
+        // This needs to match GenerateMediaFileFilmstripJob
+        const filmstripWidth = 10;
+        const frameCount = filmstripWidth * 10;
+
+        container.addEventListener('mouseenter', function() {
+            filmstripImage = document.createElement('img');
+            filmstripImage.src = thumbnailImage.getAttribute('data-filmstrip');
+            filmstripImage.style.pointerEvents = 'none';
+            filmstripImage.style.position = 'absolute';
+            filmstripImage.style.top = '0';
+            filmstripImage.style.left = '0';
+            filmstripImage.style.width = `${thumbnailImage.offsetWidth * 10}px`;
+            filmstripImage.style.height = `${thumbnailImage.offsetHeight * 10}px`;
+            filmstripImage.style.maxWidth = 'none';
+
+            let wrapper = document.createElement('div');
+            wrapper.style.position = 'absolute';
+            wrapper.style.overflow = 'hidden';
+            wrapper.style.backgroundColor = 'black';
+            wrapper.style.top = `${thumbnailImage.offsetTop}px`;
+            wrapper.style.left = `${thumbnailImage.offsetLeft}px`;
+            wrapper.style.width = `${thumbnailImage.offsetWidth}px`;
+            wrapper.style.height = `${thumbnailImage.offsetHeight}px`;
+
+            let loader = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            loader.classList = 'animate-spin';
+            loader.setAttribute('viewBox', '0 0 24 24');
+            loader.innerHTML = `
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            `;
+            loader.style.color = 'white';
+            loader.style.fill = 'none';
+            loader.style.position = 'absolute';
+            loader.style.top = 'calc(50% - 12px)';
+            loader.style.left = 'calc(50% - 12px)';
+            loader.style.width = '24px';
+            loader.style.height = '24px';
+
+            filmstripImage.addEventListener('load', function onFilmstripLoad() {
+                filmstripImage.removeEventListener('load', onFilmstripLoad);
+                loader.remove();
+            });
+
+            wrapper.appendChild(loader);
+            wrapper.appendChild(filmstripImage);
+            container.appendChild(wrapper);
+        });
+
+        container.addEventListener('mouseleave', function() {
+            filmstripImage?.parentElement?.remove();
+            filmstripImage = null;
+        });
+
+        container.addEventListener('mousemove', function(e) {
+            if (!filmstripImage) {
+                return;
+            }
+
+            const percentage = e.offsetX / e.currentTarget.clientWidth;
+            const frameIndex = Math.floor(frameCount * percentage);
+
+            const frameX = frameIndex % filmstripWidth;
+            const frameY = Math.floor(frameIndex / filmstripWidth);
+
+            filmstripImage.style.top = `-${frameY * thumbnailImage.offsetHeight}px`;
+            filmstripImage.style.left = `-${frameX * thumbnailImage.offsetWidth}px`;
+        });
+    }
+
+    document.querySelectorAll('img[data-filmstrip]').forEach(function (thumbnailImage) {
+        if (thumbnailImage.complete) {
+            initFilmstrip(thumbnailImage);
+        } else {
+            thumbnailImage.addEventListener('load', function onLoad() {
+                thumbnailImage.removeEventListener('load', onLoad);
+                initFilmstrip(thumbnailImage);
+            });
+        }
+    });
+});

@@ -54,6 +54,7 @@ class IndexDirectoriesCommand extends Command
 
             $path = Path::resolve($unsafePath);
 
+            // TODO: Implement support for indexing an individual file.
             $job = new IndexDirectoryJob($path, $maxDepth, $forceTraversal, $forceUpdate, $generateMissing);
 
             if ($async) {

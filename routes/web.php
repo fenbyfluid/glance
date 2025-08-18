@@ -30,6 +30,9 @@ Route::middleware(['auth', 'activated'])->group(function () {
         ->where('path', '.*')
         ->name('media.stream');
 
+    Route::get('/_image/{id}.avif', [MediaController::class, 'image'])
+        ->name('media.image');
+
     Route::get('/{path?}', [MediaController::class, 'index'])
         ->where('path', '.*')
         ->name('dashboard');

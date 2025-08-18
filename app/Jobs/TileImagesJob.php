@@ -17,13 +17,15 @@ class TileImagesJob implements ShouldQueue
     public function __construct(
         public array $inputImages,
         public int $columns,
-        public Deferred $outputImage,
+        public Deferred|string $outputImage,
     ) {}
 
     public function handle(): void
     {
         if ($this->batch()?->cancelled()) {
-            $this->outputImage->set(new \RuntimeException('Batch canceled'));
+            if ($this->outputImage instanceof Deferred) {
+                $this->outputImage->set(new \RuntimeException('Batch canceled'));
+            }
 
             return;
         }
@@ -51,16 +53,22 @@ class TileImagesJob implements ShouldQueue
             }
         }
 
-        ob_start();
-        imagepng($outputImage);
-        $outputData = ob_get_contents();
-        ob_end_clean();
+        if ($this->outputImage instanceof Deferred) {
+            ob_start();
+            imagepng($outputImage);
+            $outputData = ob_get_contents();
+            ob_end_clean();
 
-        $this->outputImage->set($outputData);
+            $this->outputImage->set($outputData);
+        } else {
+            imageavif($outputImage, $this->outputImage);
+        }
     }
 
     public function failed(?\Throwable $exception): void
     {
-        $this->outputImage->set($exception ?? new \RuntimeException('Unknown failure'));
+        if ($this->outputImage instanceof Deferred) {
+            $this->outputImage->set($exception ?? new \RuntimeException('Unknown failure'));
+        }
     }
 }

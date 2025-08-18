@@ -26,6 +26,8 @@ class IndexedFile extends Model
         'media_info',
         'oshash',
         'phash',
+        'thumbnail',
+        'filmstrip',
     ];
 
     public function directory(): HasOne
@@ -53,6 +55,8 @@ class IndexedFile extends Model
             $this->fill([
                 'media_info' => null,
                 'phash' => null,
+                'thumbnail' => null,
+                'filmstrip' => null,
             ]);
         }
 
@@ -62,7 +66,9 @@ class IndexedFile extends Model
     public function requiresGeneration(): bool
     {
         return ($this->kind->canProbeMediaInfo() && $this->media_info === null) ||
-            $this->kind->canPerceptualHash() && $this->phash === null;
+            ($this->kind->canThumbnail() && $this->thumbnail === null) ||
+            ($this->kind === MediaContentKind::Video && $this->filmstrip === null) ||
+            ($this->kind->canPerceptualHash() && $this->phash === null);
     }
 
     protected function casts(): array

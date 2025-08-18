@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Media\MediaContentKind;
 use App\Models\IndexedDirectory;
 use App\Models\IndexedFile;
 use Illuminate\Bus\Batchable;
@@ -51,6 +52,14 @@ class IndexFileJob implements ShouldQueue
 
         if ($this->fileEntry->kind->canProbeMediaInfo() && $this->fileEntry->media_info === null) {
             $generationJobs[] = (new ProbeMediaFileInfoJob($this->fileEntry, $this->path))->onQueue('ffprobe');
+        }
+
+        if ($this->fileEntry->kind->canThumbnail() && $this->fileEntry->thumbnail === null) {
+            $generationJobs[] = (new GenerateMediaFileThumbnailJob($this->fileEntry, $this->path, $this->parentDirectory->video_thumbnail_time ?? 15_000))->onQueue('index');
+        }
+
+        if ($this->fileEntry->kind === MediaContentKind::Video && $this->fileEntry->filmstrip === null) {
+            $generationJobs[] = (new GenerateMediaFileFilmstripJob($this->fileEntry, $this->path, $this->parentDirectory->video_thumbnail_time ?? 15_000))->onQueue('index');
         }
 
         if ($this->fileEntry->kind->canPerceptualHash() && $this->fileEntry->phash === null) {

@@ -65,8 +65,14 @@
                             @endif
                         </div>
                         @if($content->kind->canThumbnail())
-                            <div class="bg-black">
-                                <img class="mx-auto w-auto h-[180px]" loading="lazy" src="{{ $content->thumbnail ?? '' }}" alt="{{ $content->label }}" />
+                            <div class="bg-black relative overflow-hidden">
+                                <img
+                                    class="mx-auto w-auto h-[180px]"
+                                    loading="lazy"
+                                    src="{{ $content->thumbnail ? route('media.image', ['id' => $content->thumbnail], false) : '' }}"
+                                    alt="{{ $content->label }}"
+                                    {!! $content->filmstrip ? 'data-filmstrip="'.htmlspecialchars(route('media.image', ['id' => $content->filmstrip], false)).'"' : '' !!}
+                                />
                             </div>
                         @endif
                     </a>

@@ -35,6 +35,13 @@ class CaptureFrameJob implements ShouldQueue
         //   100 iterations of  png took 28.627 seconds (0.286 each) and output (  725851 | 1221408 ) bytes each
         //   100 iterations of webp took 52.543 seconds (0.525 each) and output (  328188 |  601194 ) bytes each
 
+        if ($this->width > 0 && $this->height > 0) {
+            // If both width and height are specified, scale to fit
+            $scaleFilter = sprintf('scale=\'min(iw,%d)\':\'min(ih,%d)\':force_original_aspect_ratio=decrease', $this->width, $this->height);
+        } else {
+            $scaleFilter = sprintf('scale=%d:%d', $this->width, $this->height);
+        }
+
         $imageData = '';
         $errorOutput = [];
         $result = Process::env([
@@ -45,9 +52,11 @@ class CaptureFrameJob implements ShouldQueue
             '-hide_banner',
             '-nostats',
             '-fflags', '+genpts',
+            '-threads', '1',
             ...(($this->time !== null) ? ['-ss', sprintf('%f', $this->time)] : []),
             '-i', $this->path,
-            '-filter:v', sprintf('scale=%d:%d', $this->width, $this->height),
+            '-threads', '1',
+            '-filter:v', $scaleFilter,
             '-frames:v', '1',
             '-c:v', 'png',
             '-f', 'rawvideo',

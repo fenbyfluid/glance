@@ -12,6 +12,7 @@ use App\Utilities\Path;
 use Illuminate\Bus\BatchRepository;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -159,6 +160,20 @@ class MediaController extends Controller
         } else {
             return $transcodeManager->getSegmentResponse($segment);
         }
+    }
+
+    public function image(string $id): Response
+    {
+        if (!Str::isUuid($id)) {
+            abort(404);
+        }
+
+        $filesystemPath = config('media.path').'/.thumbs/'.$id.'.avif';
+        if (!is_file($filesystemPath)) {
+            abort(404);
+        }
+
+        return response()->file($filesystemPath);
     }
 
     public function handleHttpException(Request $request, HttpException $exception): ?Response
