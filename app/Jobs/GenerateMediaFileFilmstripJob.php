@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\IndexedFile;
 use App\Utilities\Deferred;
+use App\Utilities\Path;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -53,13 +54,11 @@ class GenerateMediaFileFilmstripJob implements ShouldQueue
         for ($i = 0; $i < $frameCount; $i++) {
             $frameImage = new Deferred;
             $frameImages[] = $frameImage;
-            $frameCaptureJobs[] = new CaptureFrameJob($path, $startTime + ($stepTime * $i), 1280, 720, $frameImage);
+            $frameCaptureJobs[] = new CaptureFrameJob($path, $startTime + ($stepTime * $i), 320, 180, $frameImage);
         }
 
-        $imageId = Str::uuid();
-
-        // TODO: Decide where we want to store these.
-        $imagePath = sprintf('%s/.thumbs/%s.avif', config('media.path'), $imageId->toString());
+        $imageId = Str::uuid()->toString();
+        $imagePath = Path::makeThumbnailPath($imageId);
 
         $this->appendToChain((new WaitForFrameCaptureSlot)->onQueue('ffmpeg-wait'));
         $this->appendToChain(Bus::batch($frameCaptureJobs)->name('Capturing '.$path)->onQueue('ffmpeg-capture'));

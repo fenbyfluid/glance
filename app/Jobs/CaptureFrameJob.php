@@ -8,6 +8,7 @@ use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Process;
+use Jcupitt\Vips;
 
 class CaptureFrameJob implements ShouldQueue
 {
@@ -18,13 +19,15 @@ class CaptureFrameJob implements ShouldQueue
         public ?float $time,
         public int $width,
         public int $height,
-        public Deferred $outputImage,
+        public Deferred|string $outputImage,
     ) {}
 
     public function handle(): void
     {
         if ($this->batch()?->cancelled()) {
-            $this->outputImage->set(new \RuntimeException('Batch canceled'));
+            if ($this->outputImage instanceof Deferred) {
+                $this->outputImage->set(new \RuntimeException('Batch canceled'));
+            }
 
             return;
         }
@@ -85,11 +88,22 @@ class CaptureFrameJob implements ShouldQueue
             throw new CommandFailedException($message, $result->command(), $errorOutput);
         }
 
-        $this->outputImage->set($imageData);
+        if ($this->outputImage instanceof Deferred) {
+            $this->outputImage->set($imageData);
+        } else {
+            Vips\Config::cacheSetMax(0);
+            Vips\Config::concurrencySet(1);
+
+            $image = Vips\Image::pngload_buffer($imageData);
+
+            $image->writeToFile($this->outputImage);
+        }
     }
 
     public function failed(?\Throwable $exception): void
     {
-        $this->outputImage->set($exception ?? new \RuntimeException('Unknown failure'));
+        if ($this->outputImage instanceof Deferred) {
+            $this->outputImage->set($exception ?? new \RuntimeException('Unknown failure'));
+        }
     }
 }

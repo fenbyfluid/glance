@@ -42,4 +42,19 @@ class Path
             return implode('/', $resolved);
         }
     }
+
+    public static function makeThumbnailPath(string $id, string $extension = 'avif'): string
+    {
+        $basePath = config('media.path') . '/.thumbs';
+        $subDirs = substr($id, 0, 4) . '/' . substr($id, 4, 4);
+
+        if (!is_dir($basePath . '/' . $subDirs)) {
+            if (!@mkdir($basePath . '/' . $subDirs, 0755, true)) {
+                dump($basePath . '/' . $subDirs);
+                throw new \RuntimeException('Unable to create thumbnail directory ' . $subDirs);
+            }
+        }
+
+        return $basePath . '/' . $subDirs . '/' . $id . '.' . $extension;
+    }
 }

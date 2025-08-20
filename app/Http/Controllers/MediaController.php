@@ -168,8 +168,8 @@ class MediaController extends Controller
             abort(404);
         }
 
-        $filesystemPath = config('media.path').'/.thumbs/'.$id.'.avif';
-        if (!is_file($filesystemPath)) {
+        $filesystemPath = Path::makeThumbnailPath($id);
+        if (!file_exists($filesystemPath)) {
             abort(404);
         }
 

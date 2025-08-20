@@ -4,12 +4,13 @@ namespace App\Jobs;
 
 use App\Media\MediaContentKind;
 use App\Models\IndexedFile;
-use App\Utilities\Deferred;
+use App\Utilities\Path;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Attributes\WithoutRelations;
 use Illuminate\Support\Str;
+use Jcupitt\Vips;
 
 class GenerateMediaFileThumbnailJob implements ShouldQueue
 {
@@ -33,30 +34,42 @@ class GenerateMediaFileThumbnailJob implements ShouldQueue
             $path = config('media.path').'/'.$path;
         }
 
+        $imageId = Str::uuid()->toString();
+        $imagePath = Path::makeThumbnailPath($imageId);
+
+        // TODO: Test this properly.
+        // TODO: This should be a separate job as it should be on the ffmpeg-capture queue.
+        if ($this->outputObject->kind === MediaContentKind::Image) {
+            Vips\Config::cacheSetMax(0);
+            Vips\Config::concurrencySet(1);
+
+            $image = Vips\Image::thumbnail($path, 320, [
+                'height' => 180,
+                'output_profile' => 'srgb',
+            ]);
+
+            $image->writeToFile($imagePath);
+
+            $this->outputObject->update([
+                'thumbnail' => $imageId,
+            ]);
+
+            return;
+        }
+
         $frameTime = null;
         if ($this->outputObject->kind === MediaContentKind::Video) {
             $durationMs = $this->outputObject->media_info?->durationMs;
             if ($durationMs !== null && $this->frameCaptureMs < $durationMs) {
+                // TODO: If this fails, we should retry with no seek.
                 $frameTime = $this->frameCaptureMs / 1000;
             }
         }
 
-        $frameImage = new Deferred;
-
-        $this->appendToChain((new CaptureFrameJob($path, $frameTime, 320, 180, $frameImage))->onQueue('ffmpeg-capture'));
+        $this->appendToChain((new CaptureFrameJob($path, $frameTime, 320, 180, $imagePath))->onQueue('ffmpeg-capture'));
 
         $outputObject = $this->outputObject;
-        $this->appendToChain(static function () use ($frameImage, $outputObject) {
-            $imageId = Str::uuid();
-
-            // TODO: Decide where we want to store these.
-            $imagePath = sprintf('%s/.thumbs/%s.avif', config('media.path'), $imageId->toString());
-
-            $image = imagecreatefromstring($frameImage->block());
-            if (!imageavif($image, $imagePath)) {
-                throw new \RuntimeException('Failed to write thumbnail');
-            }
-
+        $this->appendToChain(static function () use ($imageId, $outputObject) {
             $outputObject->update([
                 'thumbnail' => $imageId,
             ]);

@@ -6,6 +6,7 @@ use App\Utilities\Deferred;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Jcupitt\Vips;
 
 class TileImagesJob implements ShouldQueue
 {
@@ -30,6 +31,22 @@ class TileImagesJob implements ShouldQueue
             return;
         }
 
+        if ($this->outputImage instanceof Deferred) {
+            $this->handleDeferredOutput();
+        } else {
+            $this->handleFileOutput();
+        }
+    }
+
+    public function failed(?\Throwable $exception): void
+    {
+        if ($this->outputImage instanceof Deferred) {
+            $this->outputImage->set($exception ?? new \RuntimeException('Unknown failure'));
+        }
+    }
+
+    private function handleDeferredOutput()
+    {
         $outputImage = null;
 
         foreach ($this->inputImages as $i => $deferredImage) {
@@ -53,22 +70,26 @@ class TileImagesJob implements ShouldQueue
             }
         }
 
-        if ($this->outputImage instanceof Deferred) {
-            ob_start();
-            imagepng($outputImage);
-            $outputData = ob_get_contents();
-            ob_end_clean();
+        // Oddly, GD's PNG compression seems better than Vips, and we OOM with Vips.
+        ob_start();
+        imagepng($outputImage);
+        $outputData = ob_get_contents();
+        ob_end_clean();
 
-            $this->outputImage->set($outputData);
-        } else {
-            imageavif($outputImage, $this->outputImage);
-        }
+        $this->outputImage->set($outputData);
     }
 
-    public function failed(?\Throwable $exception): void
+    private function handleFileOutput()
     {
-        if ($this->outputImage instanceof Deferred) {
-            $this->outputImage->set($exception ?? new \RuntimeException('Unknown failure'));
-        }
+        Vips\Config::cacheSetMax(0);
+        Vips\Config::concurrencySet(1);
+
+        $inputImages = array_map(static function (Deferred $deferredImage) {
+            return Vips\Image::pngload_buffer($deferredImage->block());
+        }, $this->inputImages);
+
+        $outputImage = Vips\Image::arrayjoin($inputImages, ['across' => $this->columns]);
+
+        $outputImage->writeToFile($this->outputImage);
     }
 }
