@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Models\User;
+use App\Utilities\OverrideMimeTypeGuesser;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
@@ -10,6 +11,7 @@ use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Horizon\Horizon;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\Mime\MimeTypes;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -41,6 +43,8 @@ class AppServiceProvider extends ServiceProvider
         if (config('media.trust_x_send_file', false)) {
             BinaryFileResponse::trustXSendfileTypeHeader();
         }
+
+        MimeTypes::getDefault()->registerGuesser(new OverrideMimeTypeGuesser());
 
         Gate::define('admin', function (User $user) {
             return $user->is_admin;
