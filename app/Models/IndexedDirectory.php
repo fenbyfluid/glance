@@ -55,7 +55,7 @@ class IndexedDirectory extends Model
         // TODO: We should have another listener here that updates children on path changes.
 
         static::deleting(function (self $directory) {
-            foreach ($directory->files()->withTrashed()->lazy() as $file) {
+            foreach ($directory->files()->withTrashed()->lazyById() as $file) {
                 if ($directory->forceDeleting) {
                     $file->forceDelete();
                 } elseif (!$file->trashed()) {
@@ -63,7 +63,7 @@ class IndexedDirectory extends Model
                 }
             }
 
-            foreach ($directory->children()->withTrashed()->with(['children', 'files'])->lazy() as $child) {
+            foreach ($directory->children()->withTrashed()->with(['children', 'files'])->lazyById() as $child) {
                 if ($directory->forceDeleting) {
                     $child->forceDelete();
                 } elseif (!$child->trashed()) {
