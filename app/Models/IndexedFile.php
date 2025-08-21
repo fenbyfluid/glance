@@ -6,6 +6,7 @@ use App\Casts\BinaryToHex;
 use App\Media\MediaContentKind;
 use App\Media\MediaInfo;
 use App\Media\OpenSubtitlesHasher;
+use App\Utilities\Path;
 use App\Utilities\ScopeHavingAccess;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -105,5 +106,23 @@ class IndexedFile extends Model
             'mime_type' => $mimeType,
             'oshash' => $osHash,
         ];
+    }
+
+
+    public static function booted(): void
+    {
+        static::deleting(function (self $file) {
+            if (!$file->forceDeleting) {
+                return;
+            }
+
+            if ($file->thumbnail) {
+                unlink(Path::makeThumbnailPath($file->thumbnail));
+            }
+
+            if ($file->filmstrip) {
+                unlink(Path::makeThumbnailPath($file->filmstrip));
+            }
+        });
     }
 }
