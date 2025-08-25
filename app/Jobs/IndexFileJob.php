@@ -66,6 +66,10 @@ class IndexFileJob implements ShouldQueue
             $generationJobs[] = (new GenerateMediaFilePerceptualHashJob($this->fileEntry, $this->path))->onQueue('index');
         }
 
+        if ($this->fileEntry->kind === MediaContentKind::Image && !$this->fileEntry->extractedText()->exists()) {
+            $generationJobs[] = (new ExtractTextJob($this->fileEntry, $this->path))->onQueue('index');
+        }
+
         if (empty($generationJobs)) {
             return;
         }

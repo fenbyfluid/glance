@@ -37,6 +37,11 @@ class IndexedFile extends Model
         return $this->belongsTo(IndexedDirectory::class, 'directory_id');
     }
 
+    public function extractedText(): HasOne
+    {
+        return $this->hasOne(IndexedFileText::class, 'id');
+    }
+
     public function isIndexOutdated(\SplFileInfo $info): bool
     {
         return ($info->getMTime() != $this->mtime) ||
@@ -60,6 +65,8 @@ class IndexedFile extends Model
                 'thumbnail' => null,
                 'filmstrip' => null,
             ]);
+
+            $this->extractedText?->forceDelete();
         }
 
         return $this->save();
@@ -67,10 +74,12 @@ class IndexedFile extends Model
 
     public function requiresGeneration(): bool
     {
+        // TODO: This is getting really messy, especially with the extractedText handling now.
         return ($this->kind->canProbeMediaInfo() && $this->media_info === null) ||
             ($this->kind->canThumbnail() && $this->thumbnail === null) ||
             ($this->kind === MediaContentKind::Video && $this->filmstrip === null) ||
-            ($this->kind->canPerceptualHash() && $this->phash === null);
+            ($this->kind->canPerceptualHash() && $this->phash === null) ||
+            ($this->kind === MediaContentKind::Image && ((isset($this->extractedText_exists) && !$this->extractedText_exists) || !$this->extractedText()->exists()));
     }
 
     protected function casts(): array
@@ -129,6 +138,14 @@ class IndexedFile extends Model
         });
 
         static::deleting(function (self $file) {
+            if ($file->extractedText !== null) {
+                if ($file->forceDeleting) {
+                    $file->extractedText->forceDelete();
+                } elseif (!$file->extractedText->trashed()) {
+                    $file->extractedText->delete();
+                }
+            }
+
             if (!$file->forceDeleting) {
                 return;
             }
@@ -140,6 +157,10 @@ class IndexedFile extends Model
             if ($file->filmstrip) {
                 unlink(Path::makeThumbnailPath($file->filmstrip));
             }
+        });
+
+        static::restoring(function (self $file) {
+            $file->extractedText()->withTrashed()->first()?->restore();
         });
     }
 }

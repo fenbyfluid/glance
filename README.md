@@ -21,7 +21,7 @@ Web-based media viewer
 * Background queue tasks:
   * [x] Thumbnail generation
   * [x] Timeline preview generation
-  * [ ] Text indexing for images
+  * [x] Text indexing for images
   * [ ] Transcript generation for audio
   * [ ] `whos-that-bean` facial recognition
   * [x] `phash` generation
