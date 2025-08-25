@@ -51,7 +51,7 @@ class IndexDirectoryJob implements ShouldQueue
         }
 
         // TODO: Decide if we need this, get it from config if we do, for now just using it to ignore some legacy stuff.
-        $ignoreRegex = '#^\.|(?:^|/)preview_#';
+        $ignoreRegex = '#(?:^|/)\.|(?:^|/)preview_#';
 
         if (preg_match($ignoreRegex, $this->path) === 1) {
             return;

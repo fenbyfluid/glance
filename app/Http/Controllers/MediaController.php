@@ -77,6 +77,8 @@ class MediaController extends Controller
                 $batch = resolve(BatchRepository::class)->find(Cache::get($batchKey));
             }
 
+            // TODO: Show a proper job status screen with progress info.
+            // TODO: Sometimes when the page refershes to the directory contents, it hasn't actually updated yet.
             return response($batch ?? '')->header('Refresh', '1');
         }
 
@@ -86,8 +88,12 @@ class MediaController extends Controller
         //       gets us the right amount with a canary for the next page. Using the FIELD() function with orderByRaw
         //       gets us files sorted correctly by type ready for grouping. However, natural sorting is quite important
         //       and doesn't appear to have any reasonable analogue. Our largest dir has about 2,500 children.
+        //       Our goal with pagination is almost exclusively to reduce the HTML size, so server-side filtering is fine.
 
+        // TODO: What is this going to look like? Do we need some sort of parallel for file access?
         $source = $this->getSourceForPath($directoryEntry, $accessControlInfo);
+
+        // TODO: If the directory includes an index.html file, it should be displayed instead of the directory listing.
 
         $contents = app('clockwork')->event('Getting contents')->run(function () use ($source) {
             // TODO: Paginate this.

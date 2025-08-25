@@ -9,6 +9,7 @@ use App\Media\OpenSubtitlesHasher;
 use App\Utilities\Path;
 use App\Utilities\ScopeHavingAccess;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -31,9 +32,9 @@ class IndexedFile extends Model
         'filmstrip',
     ];
 
-    public function directory(): HasOne
+    public function directory(): BelongsTo
     {
-        return $this->hasOne(IndexedDirectory::class, 'directory_id');
+        return $this->belongsTo(IndexedDirectory::class, 'directory_id');
     }
 
     public function isIndexOutdated(\SplFileInfo $info): bool
@@ -111,6 +112,22 @@ class IndexedFile extends Model
 
     public static function booted(): void
     {
+        static::updating(function (self $file) {
+            if ($file->isDirty('thumbnail')) {
+                $originalThumbnail = $file->getOriginal('thumbnail');
+                if ($originalThumbnail !== null) {
+                    unlink(Path::makeThumbnailPath($originalThumbnail));
+                }
+            }
+
+            if ($file->isDirty('filmstrip')) {
+                $originalFilmstrip = $file->getOriginal('filmstrip');
+                if ($originalFilmstrip !== null) {
+                    unlink(Path::makeThumbnailPath($originalFilmstrip));
+                }
+            }
+        });
+
         static::deleting(function (self $file) {
             if (!$file->forceDeleting) {
                 return;

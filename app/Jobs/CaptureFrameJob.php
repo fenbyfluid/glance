@@ -7,6 +7,7 @@ use App\Utilities\Deferred;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
 use Jcupitt\Vips;
 
@@ -91,12 +92,14 @@ class CaptureFrameJob implements ShouldQueue
         if ($this->outputImage instanceof Deferred) {
             $this->outputImage->set($imageData);
         } else {
-            Vips\Config::cacheSetMax(0);
-            Vips\Config::concurrencySet(1);
+            Cache::lock('vips', 30)->block(90, function () use ($imageData) {
+                Vips\Config::cacheSetMax(0);
+                Vips\Config::concurrencySet(1);
 
-            $image = Vips\Image::pngload_buffer($imageData);
+                $image = Vips\Image::pngload_buffer($imageData);
 
-            $image->writeToFile($this->outputImage);
+                $image->writeToFile($this->outputImage);
+            });
         }
     }
 

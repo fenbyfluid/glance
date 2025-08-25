@@ -85,7 +85,10 @@ $.fancybox.defaults = {
     onInit: function(instance) {
         console.log('onInit');
 
-        // Avoid stripping out all but first child of ajax-loaded HTML, add white-space CSS for plain text.
+        // Disable key handlers as they clash with system commands.
+        $(document).off('afterKeydown.fb');
+
+        // Avoid stripping out all but the first child of ajax-loaded HTML, add white-space CSS for plain text.
         const originalSetContent = instance.setContent;
         instance.setContent = function(slide, content) {
             if (typeof content !== 'string') {
@@ -95,15 +98,25 @@ $.fancybox.defaults = {
             const contentKind = slide.opts.$orig?.attr('data-kind');
 
             if (contentKind === 'text') {
+                slide.opts.touch = false;
+
                 content = $('<div class="prose" style="white-space: pre-wrap;"></div>')
                     .text(content)
                     .wrap('<div></div>')
                     .parent();
             } else if (contentKind === 'html') {
+                slide.opts.touch = false;
+
+                // TODO: Like the Readme rendering, this requires trusted HTML.
+                //       We'd ideally like to filter it to safe Markdown elements and no attributes.
                 content = $('<div class="prose"></div>')
                     .html(content)
                     .wrap('<div></div>')
                     .parent();
+
+                if (content.find('style').remove().length > 0) {
+                    console.warn('HTML content contained style tags, they will be ignored.');
+                }
             } else if (contentKind === 'audio') {
                 slide.type = 'ajax';
                 slide.contentType = 'html';

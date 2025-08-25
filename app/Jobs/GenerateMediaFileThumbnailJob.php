@@ -9,6 +9,7 @@ use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Attributes\WithoutRelations;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Jcupitt\Vips;
 
@@ -40,19 +41,21 @@ class GenerateMediaFileThumbnailJob implements ShouldQueue
         // TODO: Test this properly.
         // TODO: This should be a separate job as it should be on the ffmpeg-capture queue.
         if ($this->outputObject->kind === MediaContentKind::Image) {
-            Vips\Config::cacheSetMax(0);
-            Vips\Config::concurrencySet(1);
+            Cache::lock('vips', 30)->block(90, function () use ($path, $imagePath, $imageId) {
+                Vips\Config::cacheSetMax(0);
+                Vips\Config::concurrencySet(1);
 
-            $image = Vips\Image::thumbnail($path, 320, [
-                'height' => 180,
-                'output_profile' => 'srgb',
-            ]);
+                $image = Vips\Image::thumbnail($path, 320, [
+                    'height' => 180,
+                    'output_profile' => 'srgb',
+                ]);
 
-            $image->writeToFile($imagePath);
+                $image->writeToFile($imagePath);
 
-            $this->outputObject->update([
-                'thumbnail' => $imageId,
-            ]);
+                $this->outputObject->update([
+                    'thumbnail' => $imageId,
+                ]);
+            });
 
             return;
         }

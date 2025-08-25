@@ -66,8 +66,9 @@
                         </div>
                         @if($content->kind->canThumbnail())
                             <div class="bg-black relative overflow-hidden">
+                                {{-- TODO: Display a reasonable placeholder if there is no thunbnail yet --}}
                                 <img
-                                    class="mx-auto w-auto h-[180px]"
+                                    class="w-full h-[180px] object-contain"
                                     loading="lazy"
                                     src="{{ $content->thumbnail ? route('media.image', ['id' => $content->thumbnail], false) : '' }}"
                                     alt="{{ $content->label }}"

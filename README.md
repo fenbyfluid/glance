@@ -19,8 +19,8 @@ Web-based media viewer
   * [ ] Indexed on file path
   * [ ] Indexed on file OsHash to handle file moves
 * Background queue tasks:
-  * [ ] Thumbnail generation
-  * [ ] Timeline preview generation
+  * [x] Thumbnail generation
+  * [x] Timeline preview generation
   * [ ] Text indexing for images
   * [ ] Transcript generation for audio
   * [ ] `whos-that-bean` facial recognition
@@ -39,6 +39,8 @@ Web-based media viewer
   * [ ] Ngram search for file/directory names
   * [ ] Full text search on "descriptions" (e.g. scene synopsis, audio transcript, image text ocr, tumblr post body text)
   * [ ] Flexible attribute-based filtering / ordering
+* [ ] File upload
+* [ ] File deletion and renaming, maybe ?
 
 ## Database Caching Plan
 

@@ -6,6 +6,7 @@ use App\Utilities\Deferred;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Cache;
 use Jcupitt\Vips;
 
 class TileImagesJob implements ShouldQueue
@@ -81,15 +82,19 @@ class TileImagesJob implements ShouldQueue
 
     private function handleFileOutput()
     {
-        Vips\Config::cacheSetMax(0);
-        Vips\Config::concurrencySet(1);
+        Cache::lock('vips', 30)->block(90, function () {
+            Vips\Config::cacheSetMax(0);
+            Vips\Config::concurrencySet(1);
 
-        $inputImages = array_map(static function (Deferred $deferredImage) {
-            return Vips\Image::pngload_buffer($deferredImage->block());
-        }, $this->inputImages);
+            $inputImages = array_map(static function (Deferred $deferredImage) {
+                return Vips\Image::pngload_buffer($deferredImage->block());
+            }, $this->inputImages);
 
-        $outputImage = Vips\Image::arrayjoin($inputImages, ['across' => $this->columns]);
+            $outputImage = Vips\Image::arrayjoin($inputImages, [
+                'across' => $this->columns,
+            ]);
 
-        $outputImage->writeToFile($this->outputImage);
+            $outputImage->writeToFile($this->outputImage);
+        });
     }
 }
