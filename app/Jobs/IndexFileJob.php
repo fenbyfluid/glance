@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Enums\ExtractedTextStatus;
 use App\Media\MediaContentKind;
 use App\Models\IndexedDirectory;
 use App\Models\IndexedFile;
@@ -66,7 +67,7 @@ class IndexFileJob implements ShouldQueue
             $generationJobs[] = (new GenerateMediaFilePerceptualHashJob($this->fileEntry, $this->path))->onQueue('index');
         }
 
-        if ($this->fileEntry->kind === MediaContentKind::Image && !$this->fileEntry->extractedText()->exists()) {
+        if ($this->fileEntry->kind === MediaContentKind::Image && $this->fileEntry->extracted_text_status === ExtractedTextStatus::Pending) {
             $generationJobs[] = (new ExtractTextJob($this->fileEntry, $this->path))->onQueue('ffprobe');
         }
 

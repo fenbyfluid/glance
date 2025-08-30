@@ -75,7 +75,7 @@ class IndexDirectoryJob implements ShouldQueue
         }
 
         // TODO: This could be quite a lot of entries, could we do anything better?
-        $fileEntries = $this->rootDirectory->files()->withExists('extractedText')->get()->keyBy('name');
+        $fileEntries = $this->rootDirectory->files()->get()->keyBy('name');
         $directoryEntries = $this->rootDirectory->children->keyBy('name');
 
         $newFileJobs = [];

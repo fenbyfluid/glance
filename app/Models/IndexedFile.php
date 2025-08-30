@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Casts\BinaryToHex;
+use App\Enums\ExtractedTextStatus;
 use App\Media\MediaContentKind;
 use App\Media\MediaInfo;
 use App\Media\OpenSubtitlesHasher;
@@ -30,6 +31,7 @@ class IndexedFile extends Model
         'phash',
         'thumbnail',
         'filmstrip',
+        'extracted_text_status',
     ];
 
     public function directory(): BelongsTo
@@ -64,9 +66,10 @@ class IndexedFile extends Model
                 'phash' => null,
                 'thumbnail' => null,
                 'filmstrip' => null,
+                'extracted_text_status' => ExtractedTextStatus::Pending,
             ]);
 
-            $this->extractedText?->forceDelete();
+            $this->extractedText()->first()?->forceDelete();
         }
 
         return $this->save();
@@ -74,12 +77,11 @@ class IndexedFile extends Model
 
     public function requiresGeneration(): bool
     {
-        // TODO: This is getting really messy, especially with the extractedText handling now.
         return ($this->kind->canProbeMediaInfo() && $this->media_info === null) ||
             ($this->kind->canThumbnail() && $this->thumbnail === null) ||
             ($this->kind === MediaContentKind::Video && $this->filmstrip === null) ||
             ($this->kind->canPerceptualHash() && $this->phash === null) ||
-            ($this->kind === MediaContentKind::Image && ((isset($this->extractedText_exists) && !$this->extractedText_exists) || !$this->extractedText()->exists()));
+            ($this->kind === MediaContentKind::Image && $this->extracted_text_status === ExtractedTextStatus::Pending);
     }
 
     protected function casts(): array
@@ -89,6 +91,7 @@ class IndexedFile extends Model
             'media_info' => MediaInfo::class,
             'oshash' => BinaryToHex::withLength(8),
             'phash' => BinaryToHex::withLength(8),
+            'extracted_text_status' => ExtractedTextStatus::class,
         ];
     }
 
@@ -137,11 +140,13 @@ class IndexedFile extends Model
         });
 
         static::deleting(function (self $file) {
-            if ($file->extractedText !== null) {
+            $extractedText = $file->extractedText()->withTrashed()->first();
+
+            if ($extractedText !== null) {
                 if ($file->forceDeleting) {
-                    $file->extractedText->forceDelete();
-                } elseif (!$file->extractedText->trashed()) {
-                    $file->extractedText->delete();
+                    $extractedText->forceDelete();
+                } elseif (!$extractedText->trashed()) {
+                    $extractedText->delete();
                 }
             }
 

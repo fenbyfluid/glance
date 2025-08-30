@@ -17,6 +17,10 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
         });
+
+        Schema::table('indexed_files', function (Blueprint $table) {
+            $table->integer('extracted_text_status')->default(0)->after('filmstrip');
+        });
     }
 
     /**
@@ -25,5 +29,9 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('indexed_file_texts');
+
+        Schema::table('indexed_files', function (Blueprint $table) {
+            $table->dropColumn('extracted_text_status');
+        });
     }
 };

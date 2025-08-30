@@ -2,10 +2,12 @@
 
 namespace App\Jobs;
 
+use App\Enums\ExtractedTextStatus;
 use App\Models\IndexedFile;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Queue\Attributes\WithoutRelations;
 use Illuminate\Support\Facades\Process;
 use Jcupitt\Vips;
@@ -42,9 +44,29 @@ class ExtractTextJob implements ShouldQueue
             }
         }
 
-        // TODO: Indicate the state of text extraction on IndexedFile instead.
+        if ($text === '') {
+            $this->file->update([
+                'extracted_text_status' => ExtractedTextStatus::Empty,
+            ]);
+
+            return;
+        }
+
         $this->file->extractedText()->create([
             'text' => $text,
+        ]);
+
+        $this->file->update([
+            'extracted_text_status' => ExtractedTextStatus::Complete,
+        ]);
+    }
+
+    public function failed(?\Throwable $exception): void
+    {
+        $timedOut = $exception instanceof ProcessTimedOutException;
+
+        $this->file->update([
+            'extracted_text_status' => ($timedOut) ? ExtractedTextStatus::TimedOut : ExtractedTextStatus::Error,
         ]);
     }
 
@@ -59,15 +81,19 @@ class ExtractTextJob implements ShouldQueue
         //       Another alternative would be to use EAST for the segmentation instead of PSM 11.
         //       However, this is looking much better after the re-write to use confidence scores.
         // TODO: We're seeing long runtime on some comic images, needs further investigation.
-        //       On one test images, it took nearly 90 seconds, and the output was complete gibberish.
-        $result = Process::timeout(10)->run([
+        //       On one test image, it took nearly 90 seconds, and the output was complete gibberish.
+        //       Turns out this occurs when there is no text in the image, so something like EAST is probably the answer.
+        // TODO: There are some very large images with text that take a long time to process (300+ seconds).
+        //       The answer for those appears to be tiling them up and running the jobs in parallel.
+        //       Once the initial spans are extracted, merge them discarding duplicates from the overlap, then continue as normal.
+        $result = Process::timeout(45)->run([
             '/usr/bin/tesseract',
             $imagePath,
             'stdout',
             '-l', 'eng',
             '--psm', '11',
             'tsv',
-        ]);
+        ])->throw();
 
         $outputLines = explode("\n", rtrim($result->output()));
         $header = explode("\t", array_shift($outputLines));
@@ -111,8 +137,6 @@ class ExtractTextJob implements ShouldQueue
                 $text = $span['text'];
 
                 // Small hack, Tesseract has a habit of transposing these, and "I" is much more likely.
-                // TODO: This should probably done at a higher-level, right before we concat the words together.
-                //       Although, before spelling checks makes sense.
                 if ($text === '|') {
                     $text = 'I';
                 }
@@ -226,7 +250,7 @@ class ExtractTextJob implements ShouldQueue
             }
 
             // Pad the bounding box to overlap with neighboring lines
-            $padding = $lines[$i]['height'] * 0.33;
+            $padding = (int) round($lines[$i]['height'] * 0.4);
             $lines[$i]['top'] -= $padding;
             $lines[$i]['height'] += $padding * 2;
         }
@@ -285,7 +309,21 @@ class ExtractTextJob implements ShouldQueue
 
         // Visualize the computation.
         foreach ($boxes as $paragraph) {
+            $paragraphImage = $image->extract_area(
+                $paragraph['left'],
+                $paragraph['top'],
+                $paragraph['width'],
+                $paragraph['height'],
+            );
+
             foreach ($paragraph['lines'] as $line) {
+                $lineImage = $paragraphImage->extract_area(
+                    $line['left'] - $paragraph['left'],
+                    $line['top'] - $paragraph['top'],
+                    $line['width'],
+                    $line['height'],
+                );
+
                 foreach ($line['words'] as $word) {
                     $color = match ($word['dict'] ?? null) {
                         true => [255, 0, 255],
@@ -293,52 +331,60 @@ class ExtractTextJob implements ShouldQueue
                         null => [0, 255, 255],
                     };
 
-                    $image = $image->draw_rect(
+                    $lineImage = $lineImage->draw_rect(
                         $color,
-                        $word['left'],
-                        $word['top'],
+                        $word['left'] - $line['left'],
+                        $word['top'] - $line['top'],
                         $word['width'],
                         $word['height'],
                     );
 
                     $textScale = 0.5;
-                    $black = Vips\Image::black($word['width'] * $textScale, $word['height'] * $textScale);
-                    $image = $image->composite($black, Vips\BlendMode::OVER, [
-                        'x' => $word['left'] + 1,
-                        'y' => $word['top'] + 1,
+                    $black = Vips\Image::black(ceil($word['width'] * $textScale), ceil($word['height'] * $textScale));
+                    $lineImage = $lineImage->composite($black, Vips\BlendMode::OVER, [
+                        'x' => ($word['left'] - $line['left']) + 1,
+                        'y' => ($word['top'] - $line['top']) + 1,
                     ]);
 
                     $pangoText = htmlspecialchars($word['text'], ENT_NOQUOTES | ENT_XML1, 'UTF-8');
                     $textImage = Vips\Image::text($pangoText, [
-                        'font' => 'sans '.($word['height'] * $textScale),
+                        'font' => sprintf('sans %d', ceil($word['height'] * $textScale)),
                     ]);
 
                     $overlay = $textImage->newFromImage([255, 255, 255])
                         ->copy(['interpretation' => 'srgb'])
                         ->bandjoin($textImage);
 
-                    $image = $image->composite($overlay, Vips\BlendMode::OVER, [
-                        'x' => $word['left'] + 1,
-                        'y' => $word['top'] + 1,
+                    $lineImage = $lineImage->composite($overlay, Vips\BlendMode::OVER, [
+                        'x' => ($word['left'] - $line['left']) + 1,
+                        'y' => ($word['top'] - $line['top']) + 1,
                     ])->extract_band(0, ['n' => 3]);
                 }
 
-                $image = $image->draw_rect(
+                $lineImage = $lineImage->draw_rect(
                     [0, 255, 0],
-                    $line['left'],
-                    $line['top'],
+                    0,
+                    0,
                     $line['width'],
                     $line['height'],
                 );
+
+                $paragraphImage = $paragraphImage->insert(
+                    $lineImage,
+                    $line['left'] - $paragraph['left'],
+                    $line['top'] - $paragraph['top'],
+                );
             }
 
-            $image = $image->draw_rect(
+            $paragraphImage = $paragraphImage->draw_rect(
                 [255, 0, 0],
-                $paragraph['left'],
-                $paragraph['top'],
+                0,
+                0,
                 $paragraph['width'],
                 $paragraph['height'],
             );
+
+            $image = $image->insert($paragraphImage, $paragraph['left'], $paragraph['top']);
         }
 
         return $image;
