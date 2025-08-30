@@ -65,10 +65,8 @@
                             @endif
                         </div>
                         @if($content->kind->canThumbnail())
-                            <div class="bg-black relative overflow-hidden">
-                                {{-- TODO: Display a reasonable placeholder if there is no thunbnail yet --}}
+                            <div class="bg-black relative overflow-hidden h-[180px] flex justify-center items-center">
                                 <img
-                                    class="w-full h-[180px] object-contain"
                                     loading="lazy"
                                     src="{{ $content->thumbnail ? route('media.image', ['id' => $content->thumbnail], false) : '' }}"
                                     alt="{{ $content->label }}"

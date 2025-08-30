@@ -255,9 +255,11 @@ document.addEventListener('DOMContentLoaded', function() {
             loader.style.left = 'calc(50% - 12px)';
             loader.style.width = '24px';
             loader.style.height = '24px';
+            loader.style.pointerEvents = 'none';
 
+            let thisFilmstripImage = filmstripImage;
             filmstripImage.addEventListener('load', function onFilmstripLoad() {
-                filmstripImage.removeEventListener('load', onFilmstripLoad);
+                thisFilmstripImage.removeEventListener('load', onFilmstripLoad);
                 loader.remove();
             });
 

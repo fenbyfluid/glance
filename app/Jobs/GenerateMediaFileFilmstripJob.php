@@ -60,9 +60,13 @@ class GenerateMediaFileFilmstripJob implements ShouldQueue
         $imageId = Str::uuid()->toString();
         $imagePath = Path::makeThumbnailPath($imageId);
 
+        // TODO: Due to us unconditionally capturing 100 images, sometimes we can't get any frames for the last few.
+        //       To work around this, we allow failures for the captures and tiling.
+        //       Alternative options would be a fixed minimum capture interval, and either adjusting the
+        //       output grid size or repeating the last frame as many times as needed to fill the grid.
         $this->appendToChain((new WaitForFrameCaptureSlot)->onQueue('ffmpeg-wait'));
-        $this->appendToChain(Bus::batch($frameCaptureJobs)->name('Capturing '.$path)->onQueue('ffmpeg-capture'));
-        $this->appendToChain((new TileImagesJob($frameImages, $gridSize, $imagePath))->onQueue('generation-tile'));
+        $this->appendToChain(Bus::batch($frameCaptureJobs)->allowFailures()->name('Capturing '.$path)->onQueue('ffmpeg-capture'));
+        $this->appendToChain((new TileImagesJob($frameImages, $gridSize, $imagePath))->ignoreMissingImages()->onQueue('generation-tile'));
 
         $outputObject = $this->outputObject;
         $this->appendToChain(static function () use ($imageId, $outputObject) {

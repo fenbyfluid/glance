@@ -13,6 +13,8 @@ class TileImagesJob implements ShouldQueue
 {
     use Batchable, Queueable;
 
+    public bool $ignoreMissingImages = false;
+
     /**
      * @param  list<Deferred>  $inputImages
      */
@@ -21,6 +23,13 @@ class TileImagesJob implements ShouldQueue
         public int $columns,
         public Deferred|string $outputImage,
     ) {}
+
+    public function ignoreMissingImages(bool $ignoreMissingImages = true): static
+    {
+        $this->ignoreMissingImages = $ignoreMissingImages;
+
+        return $this;
+    }
 
     public function handle(): void
     {
@@ -46,12 +55,27 @@ class TileImagesJob implements ShouldQueue
         }
     }
 
-    private function handleDeferredOutput()
+    private function handleDeferredOutput(): void
     {
         $outputImage = null;
+        $lastInputImage = null;
 
         foreach ($this->inputImages as $i => $deferredImage) {
-            $image = imagecreatefromstring($deferredImage->block());
+            try {
+                $imageData = $deferredImage->block();
+                $lastInputImage = imagecreatefromstring($imageData);
+            } catch (\Exception $e) {
+                if (!$this->ignoreMissingImages) {
+                    throw $e;
+                }
+
+                if (!$lastInputImage) {
+                    continue;
+                }
+            }
+
+            $image = $lastInputImage;
+
             $width = imagesx($image);
             $height = imagesy($image);
 
@@ -74,21 +98,31 @@ class TileImagesJob implements ShouldQueue
         // Oddly, GD's PNG compression seems better than Vips, and we OOM with Vips.
         ob_start();
         imagepng($outputImage);
-        $outputData = ob_get_contents();
-        ob_end_clean();
+        $outputData = ob_get_clean();
 
         $this->outputImage->set($outputData);
     }
 
-    private function handleFileOutput()
+    private function handleFileOutput(): void
     {
         Cache::lock('vips', 30)->block(90, function () {
             Vips\Config::cacheSetMax(0);
             Vips\Config::concurrencySet(1);
 
-            $inputImages = array_map(static function (Deferred $deferredImage) {
-                return Vips\Image::pngload_buffer($deferredImage->block());
-            }, $this->inputImages);
+            $inputImages = [];
+            $lastInputImage = null;
+            foreach ($this->inputImages as $deferredImage) {
+                try {
+                    $imageData = $deferredImage->block();
+                    $lastInputImage = Vips\Image::pngload_buffer($imageData);
+                } catch (\Exception $e) {
+                    if (!$this->ignoreMissingImages) {
+                        throw $e;
+                    }
+                }
+
+                $inputImages[] = $lastInputImage ?: Vips\Image::black(1, 1);
+            }
 
             $outputImage = Vips\Image::arrayjoin($inputImages, [
                 'across' => $this->columns,

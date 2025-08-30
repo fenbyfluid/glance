@@ -60,7 +60,7 @@ readonly class Deferred
         }
 
         if ($data instanceof \Throwable) {
-            throw $data;
+            throw new \RuntimeException('Deferred failed with '.get_class($data), 0, $data);
         }
 
         // Replace the (potentially large) data with a small error.
