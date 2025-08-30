@@ -44,7 +44,7 @@ class AppServiceProvider extends ServiceProvider
             BinaryFileResponse::trustXSendfileTypeHeader();
         }
 
-        MimeTypes::getDefault()->registerGuesser(new OverrideMimeTypeGuesser());
+        MimeTypes::getDefault()->registerGuesser(new OverrideMimeTypeGuesser);
 
         Gate::define('admin', function (User $user) {
             return $user->is_admin;

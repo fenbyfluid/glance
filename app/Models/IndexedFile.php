@@ -118,7 +118,6 @@ class IndexedFile extends Model
         ];
     }
 
-
     public static function booted(): void
     {
         static::updating(function (self $file) {

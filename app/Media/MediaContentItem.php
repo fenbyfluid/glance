@@ -19,9 +19,9 @@ class MediaContentItem
     }
 
     public function __construct(
-        readonly string $path,
-        readonly public ?string $mimeType = null,
-        readonly public ?string $thumbnail = null,
-        readonly public ?string $filmstrip = null,
+        public readonly string $path,
+        public readonly ?string $mimeType = null,
+        public readonly ?string $thumbnail = null,
+        public readonly ?string $filmstrip = null,
     ) {}
 }

@@ -32,10 +32,15 @@ class ExtractTextJob implements ShouldQueue
             $path = config('media.path').'/'.$path;
         }
 
-        $spans = self::extractTextSpans($path);
+        $boxes = self::extractTextBoxes($path);
+        $text = self::extractTextFromBoxes($boxes);
 
-        // TODO: Re-filter out entries where all the spans are nonsense.
-        $text = implode("\n", array_map(fn($span) => $span[0], $spans));
+        // A bit of a hack, drop anything we get back consisting only single-line words and less than 3 lines.
+        if (substr_count($text, "\n") < 3) {
+            if (substr_count($text, ' ') < 2) {
+                $text = '';
+            }
+        }
 
         // TODO: Indicate the state of text extraction on IndexedFile instead.
         $this->file->extractedText()->create([
@@ -44,164 +49,451 @@ class ExtractTextJob implements ShouldQueue
     }
 
     /**
-     * @return array{string, array{int, int, int, int}, int}
+     * @return list<array{left: int, top: int, width: int, height: int, lines: list<array{left: int, top: int, width: int, height: int, words: list<array{conf: float, dict?: bool, text: string}>}>}>
      */
-    public static function extractTextSpans(string $imagePath): array {
-        // TODO: Tesseract get's pretty confused if any denied characters are actually present in the text.
-        //       The big reason for this is "|", which often gets mixed up with "I", so only deny that for now.
-        $tesseractCharacterDenyList = '|'; // '()[]{}/\_|';
-
+    public static function extractTextBoxes(string $imagePath): array
+    {
         // TODO: This does an alright job with screenshots (which is our primary goal),
         //       but it'd be nice to do a better job with comics and comic-like art.
         //       PaddleOCR looks very promising for future investigation here.
         //       Another alternative would be to use EAST for the segmentation instead of PSM 11.
-        $result = Process::timeout(30)->run([
+        //       However, this is looking much better after the re-write to use confidence scores.
+        // TODO: We're seeing long runtime on some comic images, needs further investigation.
+        //       On one test images, it took nearly 90 seconds, and the output was complete gibberish.
+        $result = Process::timeout(10)->run([
             '/usr/bin/tesseract',
             $imagePath,
             'stdout',
             '-l', 'eng',
             '--psm', '11',
-            '-c', 'tessedit_char_blacklist='.$tesseractCharacterDenyList,
-            'wordstrbox',
+            'tsv',
         ]);
 
-        $spans = [];
+        $outputLines = explode("\n", rtrim($result->output()));
+        $header = explode("\t", array_shift($outputLines));
 
-        $lines = explode("\n", rtrim($result->output()));
-        foreach ($lines as $line) {
-            // Ignore the padded box lines.
-            if ($line[0] === "\t") {
+        // Parse Tesseract output into structured lines and words, with confidence scores and bounding boxes.
+        $lines = [];
+        $lineHeights = [];
+        foreach ($outputLines as $outputLine) {
+            $span = array_map(fn ($value, $key) => match ($key) {
+                'text' => $value,
+                'conf' => (float) $value,
+                default => (int) $value,
+            }, explode("\t", $outputLine), $header);
+            $span = array_combine($header, $span);
+
+            // Because we're in PSM 11 mode, we only have blocks consisting of a single line, with one or more words each.
+            if ($span['page_num'] !== 1 || $span['par_num'] > 1 || $span['line_num'] > 1) {
+                throw new \Exception('Unexpected structure: '.json_encode($span));
+            }
+
+            // Discard all structures above lines.
+            if ($span['level'] < 4) {
                 continue;
             }
 
-            $parsed = explode(' ', $line, 7);
-            if ($parsed[0] !== 'WordStr') {
-                throw new \Exception('Unexpected line: '.$line);
-            }
+            if ($span['level'] === 4) {
+                $lines[$span['block_num']] = [
+                    'left' => $span['left'],
+                    'top' => $span['top'],
+                    'width' => $span['width'],
+                    'height' => $span['height'],
+                    'words' => [],
+                ];
 
-            // TODO: Using one of the outputs with a confidence score (tsv, alto) would let us discard much more reliably.
-            //       This check mainly exists to avoid noise turning the whole image into a single merged box, so instead
-            //       discarding individual unreliable "words" would meet that goal more effectively, and not filter out
-            //       two-letter words.
-            $text = substr($parsed[6], 1);
-            if (preg_match('/[a-z\']{3}/i', $text) !== 1) {
-                // Ignore any text lines without at least 3 letters side-by-side.
+                $lineHeights[] = $span['height'];
+
                 continue;
             }
 
-            // left, bottom, right, top - relative to the bottom left corner of the image
-            $coords = [
-                (int)$parsed[1],
-                (int)$parsed[2],
-                (int)$parsed[3],
-                (int)$parsed[4],
-            ];
+            if ($span['level'] === 5) {
+                $text = $span['text'];
 
-            // Pad the bounding box to overlap with neighboring lines.
-            $height = $coords[3] - $coords[1];
-            $widthPadding = round($height * 0.5);
-            $heightPadding = round($height * 0.5);
-            $coords[0] -= $widthPadding;
-            $coords[1] -= $heightPadding;
-            $coords[2] += $widthPadding;
-            $coords[3] += $heightPadding;
+                // Small hack, Tesseract has a habit of transposing these, and "I" is much more likely.
+                // TODO: This should probably done at a higher-level, right before we concat the words together.
+                //       Although, before spelling checks makes sense.
+                if ($text === '|') {
+                    $text = 'I';
+                }
 
-            $spans[] = [
-                trim($text),
-                $coords,
-                [$height],
-            ];
+                $lineHeights[] = $span['height'];
+
+                // Occasionally, Tesseract will combine a good word with absolute nonsense non-text to produce a line.
+                // e.g. a username next to a profile photo. Keep the per-word BBoxes to fix these up in post.
+                $lines[$span['block_num']]['words'][$span['word_num']] = [
+                    'left' => $span['left'],
+                    'top' => $span['top'],
+                    'width' => $span['width'],
+                    'height' => $span['height'],
+                    'conf' => $span['conf'],
+                    'text' => $text,
+                ];
+
+                continue;
+            }
+
+            throw new \Exception('Unexpected level: '.$span['level']);
         }
 
-        // Merge overlapping spans to compute bounding boxes.
-        // Originally, we extracted the bounding boxes and used them to re-detect the text in column node,
-        // but the output was worse, so now we just concat the text spans during this pass.
-        do {
-            // Repeat until no more spans are merged.
-            $spansChanged = false;
+        if (empty($lines)) {
+            return [];
+        }
 
-            foreach ($spans as $i => $span) {
-                foreach ($spans as $j => $otherSpan) {
-                    if ($i <= $j) {
-                        continue;
-                    }
+        sort($lineHeights);
+        $medianHeight = $lineHeights[floor(count($lineHeights) * 0.5)];
+        $minimumHeight = $medianHeight * (1 / 3);
+        $maximumHeight = $medianHeight * 3;
 
-                    if ($span[1][0] >= $otherSpan[1][2] || $span[1][2] <= $otherSpan[1][0]) {
-                        continue;
-                    }
+        foreach ($lines as $i => $line) {
+            $goodWordCount = 0;
+            $initialWordCount = count($line['words']);
 
-                    if ($span[1][1] >= $otherSpan[1][3] || $span[1][3] <= $otherSpan[1][1]) {
-                        continue;
-                    }
+            foreach ($line['words'] as $j => $word) {
+                // Remove words significantly smaller or larger than the median
+                if ($word['height'] < $minimumHeight || $word['height'] > $maximumHeight) {
+                    unset($lines[$i]['words'][$j]);
 
-                    $spans[$i][0] = $otherSpan[0].' '.$span[0];
-                    $spans[$i][1][0] = min($span[1][0], $otherSpan[1][0]);
-                    $spans[$i][1][1] = min($span[1][1], $otherSpan[1][1]);
-                    $spans[$i][1][2] = max($span[1][2], $otherSpan[1][2]);
-                    $spans[$i][1][3] = max($span[1][3], $otherSpan[1][3]);
-                    $spans[$i][2] = [...$span[2], ...$otherSpan[2]];
-                    unset($spans[$j]);
+                    continue;
+                }
 
-                    $spansChanged = true;
+                // Remove very low confidence words
+                if ($word['conf'] < 33) {
+                    unset($lines[$i]['words'][$j]);
+
+                    continue;
+                }
+
+                // Don't bother checking very high confidence words against the dictionary
+                if ($word['conf'] > 95) {
+                    $goodWordCount++;
+
+                    continue;
+                }
+
+                // Or medium confidence words with a decent length
+                if ($word['conf'] > 66 && preg_match('/\w{4}/', $word['text'])) {
+                    $goodWordCount++;
+
+                    continue;
+                }
+
+                $inDictionary = static::checkDictionaryWord($word['text']);
+
+                if ($inDictionary !== null) {
+                    $lines[$i]['words'][$j]['dict'] = $inDictionary;
+                }
+
+                if ($inDictionary) {
+                    $goodWordCount++;
+                }
+            }
+
+            // Remove lines without any good words (including ones that are now empty)
+            if ($goodWordCount == 0) {
+                unset($lines[$i]);
+
+                continue;
+            }
+
+            $wordConfidence = array_map(fn ($word) => $word['conf'], $lines[$i]['words']);
+            sort($wordConfidence);
+            $lineConfidence = $wordConfidence[floor(count($wordConfidence) * 0.5)];
+
+            // Remove low confidence lines
+            if ($lineConfidence < 66) {
+                unset($lines[$i]);
+
+                continue;
+            }
+
+            // If words were removed, and line bounding box is much taller than the words, rebuild it.
+            if (count($lines[$i]['words']) < $initialWordCount) {
+                $firstWord = reset($lines[$i]['words']);
+                $newLine = [
+                    'top' => $firstWord['top'],
+                    'left' => $firstWord['left'],
+                    'width' => $firstWord['width'],
+                    'height' => $firstWord['height'],
+                    'words' => [],
+                ];
+
+                foreach ($lines[$i]['words'] as $word) {
+                    $newLine = self::extendBoxWithItem($newLine, $word, 'words');
+                }
+
+                $lines[$i] = $newLine;
+            }
+
+            // Pad the bounding box to overlap with neighboring lines
+            $padding = $lines[$i]['height'] * 0.33;
+            $lines[$i]['top'] -= $padding;
+            $lines[$i]['height'] += $padding * 2;
+        }
+
+        // Merge overlapping lines to produce paragraphs.
+        // The $lines array will be arranged left to right then top to bottom.
+        // But they may not be contiguous, e.g. if columns are present.
+        $paragraphs = [];
+        foreach ($lines as $line) {
+            $found = false;
+            foreach ($paragraphs as $j => $paragraph) {
+                if (self::doBoxesOverlap($paragraph, $line)) {
+                    $paragraphs[$j] = self::extendBoxWithItem($paragraph, $line, 'lines');
+                    $found = true;
                     break;
                 }
             }
-        } while ($spansChanged);
 
-        foreach ($spans as $i => $span) {
-            // Lazy median.
-            sort($span[2]);
-            $spans[$i][2] = $span[2][floor(count($span[2]) / 2)];
+            if (!$found) {
+                $paragraphs[] = [
+                    'top' => $line['top'],
+                    'left' => $line['left'],
+                    'height' => $line['height'],
+                    'width' => $line['width'],
+                    'lines' => [$line],
+                ];
+            }
         }
 
-        // Sort by height.
-        // Not strictly necessary but makes the output easier to read.
-        usort($spans, function ($a, $b) {
-            return $b[1][1] <=> $a[1][1];
-        });
+        return self::orderBoxes($paragraphs);
+    }
 
-        return $spans;
+    public static function extractTextFromBoxes(array $boxes): string
+    {
+        $text = '';
+
+        foreach ($boxes as $paragraph) {
+            foreach ($paragraph['lines'] as $line) {
+                foreach ($line['words'] as $word) {
+                    $text .= $word['text'].' ';
+                }
+            }
+
+            $text = rtrim($text)."\n";
+        }
+
+        return rtrim($text);
     }
 
     /**
-     * @param array{string, array{int, int, int, int}, int} $spans
+     * @param  list<array{left: int, top: int, width: int, height: int, lines: list<array{left: int, top: int, width: int, height: int, words: list<array{conf: float, dict?: bool, text: string}>}>}>  $boxes
      */
-    public static function visualizeTextSpans(string $imagePath, array $spans): Vips\Image {
-        $image = Vips\Image::newFromFile($imagePath);
+    public static function visualizeTextBoxes(string $imagePath, array $boxes): Vips\Image
+    {
+        $image = Vips\Image::newFromFile($imagePath)->extract_band(0, ['n' => 3]);
 
         // Visualize the computation.
-        foreach ($spans as $span) {
-            [$text, $coords, $lineHeight] = $span;
+        foreach ($boxes as $paragraph) {
+            foreach ($paragraph['lines'] as $line) {
+                foreach ($line['words'] as $word) {
+                    $color = match ($word['dict'] ?? null) {
+                        true => [255, 0, 255],
+                        false => [0, 0, 255],
+                        null => [0, 255, 255],
+                    };
 
-            // Ensure the bounding box is within the image.
-            $coords[0] = max(0, $coords[0]);
-            $coords[1] = max(0, $coords[1]);
-            $coords[2] = min($image->width, $coords[2]);
-            $coords[3] = min($image->height, $coords[3]);
+                    $image = $image->draw_rect(
+                        $color,
+                        $word['left'],
+                        $word['top'],
+                        $word['width'],
+                        $word['height'],
+                    );
 
-            $black = Vips\Image::black($coords[2] - $coords[0], $coords[3] - $coords[1]);
-            $image = $image->composite($black, Vips\BlendMode::OVER, [
-                'x' => $coords[0],
-                'y' => $image->height - $coords[3],
-            ]);
+                    $textScale = 0.5;
+                    $black = Vips\Image::black($word['width'] * $textScale, $word['height'] * $textScale);
+                    $image = $image->composite($black, Vips\BlendMode::OVER, [
+                        'x' => $word['left'] + 1,
+                        'y' => $word['top'] + 1,
+                    ]);
 
-            $textPadding = $lineHeight * 0.5;
-            $pangoText = htmlspecialchars($text, ENT_NOQUOTES | ENT_XML1, 'UTF-8');
-            $textImage = Vips\Image::text($pangoText, [
-                'font' => 'sans ' . $lineHeight,
-                'width' => ($coords[2] - $coords[0]) - ($textPadding * 2),
-            ]);
+                    $pangoText = htmlspecialchars($word['text'], ENT_NOQUOTES | ENT_XML1, 'UTF-8');
+                    $textImage = Vips\Image::text($pangoText, [
+                        'font' => 'sans '.($word['height'] * $textScale),
+                    ]);
 
-            $overlay = $textImage->newFromImage([255, 0, 0])
-                ->copy(['interpretation' => 'srgb'])
-                ->bandjoin($textImage);
+                    $overlay = $textImage->newFromImage([255, 255, 255])
+                        ->copy(['interpretation' => 'srgb'])
+                        ->bandjoin($textImage);
 
-            $image = $image->composite($overlay, Vips\BlendMode::OVER, [
-                'x' => $coords[0] + $textPadding,
-                'y' => ($image->height - $coords[3]) + $textPadding,
-            ]);
+                    $image = $image->composite($overlay, Vips\BlendMode::OVER, [
+                        'x' => $word['left'] + 1,
+                        'y' => $word['top'] + 1,
+                    ])->extract_band(0, ['n' => 3]);
+                }
+
+                $image = $image->draw_rect(
+                    [0, 255, 0],
+                    $line['left'],
+                    $line['top'],
+                    $line['width'],
+                    $line['height'],
+                );
+            }
+
+            $image = $image->draw_rect(
+                [255, 0, 0],
+                $paragraph['left'],
+                $paragraph['top'],
+                $paragraph['width'],
+                $paragraph['height'],
+            );
         }
 
         return $image;
+    }
+
+    private static function checkDictionaryWord(string $text): ?bool
+    {
+        static $approvedWords = [];
+
+        static $dictionary = false;
+        if (!$dictionary) {
+            $broker = enchant_broker_init();
+            if (!$broker) {
+                throw new \Exception('Enchantment broker initialization failed');
+            }
+
+            // TODO: Support multiple languages.
+            $dictionary = enchant_broker_request_dict($broker, 'en');
+            if (!$dictionary) {
+                throw new \Exception('Enchantment dictionary initialization failed');
+            }
+        }
+
+        if (strlen($text) <= 1) {
+            return null;
+        }
+
+        if (isset($approvedWords[$text])) {
+            return $approvedWords[$text];
+        }
+
+        // Enchant's spelling providers need us to remove all surrounding punctuation
+        $cleanText = preg_replace('/^\p{P}+|\p{P}+$/', '', $text);
+
+        // There are too many single-letter "dictionary" words
+        if (strlen($cleanText) <= 1) {
+            return null;
+        }
+
+        if (isset($approvedWords[$cleanText])) {
+            return $approvedWords[$cleanText];
+        }
+
+        $result = enchant_dict_check($dictionary, $cleanText);
+        $approvedWords[$text] = $result;
+        $approvedWords[$cleanText] = $result;
+
+        return $result;
+    }
+
+    private static function doBoxesOverlap(array $a, array $b): bool
+    {
+        return !(
+            $a['top'] > ($b['top'] + $b['height']) ||
+            ($a['top'] + $a['height']) < $b['top'] ||
+            $a['left'] > ($b['left'] + $b['width']) ||
+            ($a['left'] + $a['width']) < $b['left']
+        );
+    }
+
+    private static function extendBoxWithItem(array $parent, array $child, string $key): array
+    {
+        $left = min($parent['left'], $child['left']);
+        $top = min($parent['top'], $child['top']);
+
+        $right = max($parent['left'] + $parent['width'], $child['left'] + $child['width']);
+        $bottom = max($parent['top'] + $parent['height'], $child['top'] + $child['height']);
+
+        $width = $right - $left;
+        $height = $bottom - $top;
+
+        return [
+            'top' => $top,
+            'left' => $left,
+            'width' => $width,
+            'height' => $height,
+            $key => [...$parent[$key], $child],
+        ];
+    }
+
+    /**
+     * Approximate right-to-left, top-to-bottom reading order for unknown layouts,
+     * handling pure two-column layouts as well as irregular ones.
+     *
+     * In the interest of time, this function was generated by GPT-4
+     *
+     * @param  array  $boxes  Array of boxes with at least 'top', 'left', 'width', 'height'
+     * @param  int  $columnThreshold  Minimum pixel gap to consider columns separate
+     * @param  int  $rowThreshold  Minimum pixel gap to consider boxes in same row
+     * @return array Ordered list of boxes
+     */
+    private static function orderBoxes(array $boxes, int $columnThreshold = 40, int $rowThreshold = 20): array
+    {
+        if (count($boxes) <= 1) {
+            return $boxes;
+        }
+
+        // 1. Try to detect columns by finding a significant gap between sorted left edges
+        usort($boxes, fn ($a, $b) => $a['left'] <=> $b['left']);
+
+        $gaps = [];
+        for ($i = 1; $i < count($boxes); $i++) {
+            $gaps[] = [
+                'gap' => $boxes[$i]['left'] - ($boxes[$i - 1]['left'] + $boxes[$i - 1]['width']),
+                'i' => $i,
+            ];
+        }
+
+        // Find the largest gap that's above the threshold
+        $split = null;
+        foreach ($gaps as $g) {
+            if ($g['gap'] > $columnThreshold) {
+                $split = $g['i'];
+                break;
+            }
+        }
+
+        // We have two columns! Recursively order each column, starting with the left
+        if ($split !== null) {
+            $left = self::orderBoxes(array_slice($boxes, 0, $split), $columnThreshold, $rowThreshold);
+            $right = self::orderBoxes(array_slice($boxes, $split), $columnThreshold, $rowThreshold);
+
+            return array_merge($left, $right);
+        }
+
+        // If no clear columns, fall back to row-based grouping as before
+        // Group by rows (top)
+        usort($boxes, fn ($a, $b) => $a['top'] <=> $b['top']);
+        $rows = [];
+        foreach ($boxes as $box) {
+            $placed = false;
+            foreach ($rows as &$row) {
+                if (abs($box['top'] - $row['avgTop']) < $rowThreshold) {
+                    $row['boxes'][] = $box;
+                    $row['avgTop'] = array_sum(array_column($row['boxes'], 'top')) / count($row['boxes']);
+                    $placed = true;
+                    break;
+                }
+            }
+            unset($row);
+            if (!$placed) {
+                $rows[] = ['avgTop' => $box['top'], 'boxes' => [$box]];
+            }
+        }
+
+        // Sort rows top-to-bottom, and boxes in each row right-to-left
+        usort($rows, fn ($a, $b) => $a['avgTop'] <=> $b['avgTop']);
+        $ordered = [];
+        foreach ($rows as $row) {
+            usort($row['boxes'], fn ($a, $b) => $b['left'] <=> $a['left']);
+            foreach ($row['boxes'] as $box) {
+                $ordered[] = $box;
+            }
+        }
+
+        return $ordered;
     }
 }

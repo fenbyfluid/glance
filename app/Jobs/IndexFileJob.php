@@ -67,7 +67,7 @@ class IndexFileJob implements ShouldQueue
         }
 
         if ($this->fileEntry->kind === MediaContentKind::Image && !$this->fileEntry->extractedText()->exists()) {
-            $generationJobs[] = (new ExtractTextJob($this->fileEntry, $this->path))->onQueue('index');
+            $generationJobs[] = (new ExtractTextJob($this->fileEntry, $this->path))->onQueue('ffprobe');
         }
 
         if (empty($generationJobs)) {
