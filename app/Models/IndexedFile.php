@@ -13,10 +13,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Laravel\Scout\Searchable;
+use TeamTNT\TNTSearch\Support\NGramTokenizer;
 
 class IndexedFile extends Model
 {
-    use ScopeHavingAccess, SoftDeletes;
+    use ScopeHavingAccess, Searchable, SoftDeletes;
 
     protected $fillable = [
         'directory_id',
@@ -33,6 +35,21 @@ class IndexedFile extends Model
         'filmstrip',
         'extracted_text_status',
     ];
+
+    public function toSearchableArray(): array
+    {
+        $tokenizer = new NGramTokenizer(3, 3);
+
+        return [
+            'id' => $this->id,
+            'name' => implode(' ', $tokenizer->tokenize($this->name)),
+        ];
+    }
+
+    public function syncWithSearchUsingQueue(): string
+    {
+        return 'index';
+    }
 
     public function directory(): BelongsTo
     {

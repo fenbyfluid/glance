@@ -36,9 +36,16 @@ Web-based media viewer
 * [x] Static files must be authorized too (with Nginx)
 * [ ] Public link generation - directory or file
 * [ ] Search
-  * [ ] Ngram search for file/directory names
-  * [ ] Full text search on "descriptions" (e.g. scene synopsis, audio transcript, image text ocr, tumblr post body text)
+  * [x] Ngram search for file/directory names
+  * [ ] Full text search on "descriptions"
+    * [x] Image text OCR
+    * [ ] Text file contents
+    * [ ] HTML file contents
+    * [ ] Audio transcripts
+    * [ ] Scene synopsis
+    * [ ] Tumblr posts
   * [ ] Flexible attribute-based filtering / ordering
+  * [ ] Optional filtering to current / child directories
 * [ ] File upload
 * [ ] File deletion and renaming, maybe ?
 
@@ -85,6 +92,14 @@ We need quite a bit of metadata to support the functionality we'd like, and it's
    * (key, value) for filtering
 
 Laravel Scout with the TNTSearch driver is probably the most promising FT search option.
+
+TNTSearch is a little clunky with the SQLite engine, and the MySQL engine is not properly supported in the Scout adapter.
+Typesense looks like it's worth an investigation, but needs an external server binary running, and doesn't do n-gram indexing currently.
+Efficiently filtering user access permissions with TNTSearch seems a little painful, we appear to need materialized user
+access per document, which it doesn't offer any way of storing within the index itself. Our query overheating method
+borrowed from Phabricator seems to work for now.
+Looks like we're currently missing stopword handling, which is messing up our search results a little. This may also
+be an issue with our trigram creation, we maybe should be tokenizing before trigram creation rather than embedding spaces.
 
 We currently store the OsHash and PHash in the main files table, we think we might also want to store the duration for
 audio and videos. There are some proposed changes in Stash to the PHash algorithm necessitating a "v2", and also adding

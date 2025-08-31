@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\Access\Authorizable;
+use Illuminate\Http\Request;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\URL;
@@ -131,5 +132,26 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
             'invite.link',
             Carbon::now()->addDays(7),
             ['user' => $this]);
+    }
+
+    public static function setAccessControlOverrideUser(Request $request, ?User $user): void
+    {
+        $request->session()->put('admin_impersonating_user', $user?->getKey());
+    }
+
+    public static function getAccessControlOverrideUser(Request $request): ?User
+    {
+        /** @var User $user */
+        $user = $request->user();
+        if (!$user->is_admin) {
+            return null;
+        }
+
+        $impersonatingUserId = $request->session()->get('admin_impersonating_user');
+        if ($impersonatingUserId === null) {
+            return null;
+        }
+
+        return User::find($impersonatingUserId);
     }
 }

@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\AccessController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\SearchController;
 use Illuminate\Support\Facades\Route;
 
 require __DIR__.'/auth.php';
@@ -24,6 +25,11 @@ Route::middleware(['auth', 'activated'])->group(function () {
         Route::resource('access', AccessController::class)->only([
             'index', 'store', 'destroy',
         ]);
+    });
+
+    Route::prefix('_search')->name('search.')->group(function () {
+        Route::get('/name/{query?}', [SearchController::class, 'name'])->name('name');
+        Route::get('/content/{query?}', [SearchController::class, 'content'])->name('content');
     });
 
     Route::get('/_stream/{path?}', [MediaController::class, 'stream'])

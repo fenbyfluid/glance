@@ -94,7 +94,7 @@ class UserController extends Controller
 
     public function impersonate(Request $request, ?User $user = null)
     {
-        $request->session()->put('admin_impersonating_user', $user?->getKey());
+        User::setAccessControlOverrideUser($request, $user);
 
         if ($user) {
             return redirect()->route('dashboard');

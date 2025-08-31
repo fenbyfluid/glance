@@ -52,6 +52,9 @@ class ExtractTextJob implements ShouldQueue
             return;
         }
 
+        // The Typesense docs advise breaking long blocks of text up into a paragraphs
+        // and indexing them as if they're separate documents to improve recall performance
+        // We could turn this into a one-to-many relationship to do that
         $this->file->extractedText()->create([
             'text' => $text,
         ]);

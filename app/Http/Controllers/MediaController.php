@@ -24,7 +24,7 @@ class MediaController extends Controller
         $path = Path::resolve($unsafePath);
 
         $user = $request->user();
-        $accessControlOverrideUser = $this->getAccessControlOverrideUser($request);
+        $accessControlOverrideUser = User::getAccessControlOverrideUser($request);
         $accessControlInfo = ($accessControlOverrideUser ?? $user)->getPathAccessInfo($path);
 
         // User has no access to anything under here, nothing to do.
@@ -146,7 +146,7 @@ class MediaController extends Controller
         $segment = ($matches[2] !== null) ? (int) $matches[2] : null;
 
         $user = $request->user();
-        $accessControlOverrideUser = $this->getAccessControlOverrideUser($request);
+        $accessControlOverrideUser = User::getAccessControlOverrideUser($request);
         $accessControlInfo = ($accessControlOverrideUser ?? $user)->getPathAccessInfo($path);
         if (!$accessControlInfo['']) {
             abort(404);
@@ -179,6 +179,8 @@ class MediaController extends Controller
             abort(404);
         }
 
+        config(['clockwork.enable' => false]);
+
         return response()->file($filesystemPath);
     }
 
@@ -202,7 +204,7 @@ class MediaController extends Controller
             'breadcrumbs' => $this->getCrumbsForPath($path),
             'readme' => $message,
             'contents' => [],
-            'accessControlOverrideUser' => $this->getAccessControlOverrideUser($request),
+            'accessControlOverrideUser' => User::getAccessControlOverrideUser($request),
         ]), $statusCode);
     }
 
@@ -252,21 +254,5 @@ class MediaController extends Controller
     {
         // TODO
         return new DirectorySource($indexedDirectory, $accessControlInfo);
-    }
-
-    private function getAccessControlOverrideUser(Request $request): ?User
-    {
-        /** @var User $user */
-        $user = $request->user();
-        if (!$user->is_admin) {
-            return null;
-        }
-
-        $impersonatingUserId = $request->session()->get('admin_impersonating_user');
-        if ($impersonatingUserId === null) {
-            return null;
-        }
-
-        return User::find($impersonatingUserId);
     }
 }

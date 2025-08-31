@@ -7,10 +7,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Laravel\Scout\Searchable;
+use TeamTNT\TNTSearch\Support\NGramTokenizer;
 
 class IndexedDirectory extends Model
 {
-    use ScopeHavingAccess, SoftDeletes;
+    use ScopeHavingAccess, Searchable, SoftDeletes;
 
     protected $fillable = [
         'parent_id',
@@ -19,6 +21,21 @@ class IndexedDirectory extends Model
         'inode',
         'mtime',
     ];
+
+    public function toSearchableArray(): array
+    {
+        $tokenizer = new NGramTokenizer(3, 3);
+
+        return [
+            'id' => $this->id,
+            'name' => implode(' ', $tokenizer->tokenize($this->name)),
+        ];
+    }
+
+    public function syncWithSearchUsingQueue(): string
+    {
+        return 'index';
+    }
 
     public function parent(): HasOne
     {
