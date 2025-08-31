@@ -3,7 +3,9 @@
 namespace App\Jobs;
 
 use App\Enums\ExtractedTextStatus;
+use App\Media\MediaContentKind;
 use App\Models\IndexedFile;
+use Dom\HTMLDocument;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -34,15 +36,12 @@ class ExtractTextJob implements ShouldQueue
             $path = config('media.path').'/'.$path;
         }
 
-        $boxes = self::extractTextBoxes($path);
-        $text = self::extractTextFromBoxes($boxes);
-
-        // A bit of a hack, drop anything we get back consisting only single-line words and less than 3 lines.
-        if (substr_count($text, "\n") < 3) {
-            if (substr_count($text, ' ') < 2) {
-                $text = '';
-            }
-        }
+        $text = match ($this->file->kind) {
+            MediaContentKind::Image => $this->extractTextFromImageFile($path),
+            MediaContentKind::Text => $this->extractTextFromTextFile($path),
+            MediaContentKind::Html => $this->extractTextFromHtmlFile($path),
+            default => throw new \LogicException('Unsupported media kind: '.$this->file->kind->name),
+        };
 
         if ($text === '') {
             $this->file->update([
@@ -50,6 +49,11 @@ class ExtractTextJob implements ShouldQueue
             ]);
 
             return;
+        }
+
+        $this->file->load('extractedText');
+        if ($this->file->extractedText) {
+            $this->file->extractedText->forceDelete();
         }
 
         // The Typesense docs advise breaking long blocks of text up into a paragraphs
@@ -71,6 +75,97 @@ class ExtractTextJob implements ShouldQueue
         $this->file->update([
             'extracted_text_status' => ($timedOut) ? ExtractedTextStatus::TimedOut : ExtractedTextStatus::Error,
         ]);
+    }
+
+    private function extractTextFromImageFile(string $path): string
+    {
+        $boxes = self::extractTextBoxes($path);
+        $text = self::extractTextFromBoxes($boxes);
+
+        // A bit of a hack, drop anything we get back consisting only single-line words and less than 3 lines.
+        if (substr_count($text, "\n") < 3) {
+            if (substr_count($text, ' ') < 2) {
+                $text = '';
+            }
+        }
+
+        return $text;
+    }
+
+    private function extractTextFromTextFile(string $path): string|array|null
+    {
+        $text = file_get_contents($path);
+        $text = preg_replace('/[\t ]+/', ' ', $text);
+        $text = preg_replace("/(?:\r?\n)+/", "\n", $text);
+
+        return $text;
+    }
+
+    /**
+     * In the interest of time, this function was partially generated with GPT-4
+     */
+    private function extractTextFromHtmlFile(string $path): string
+    {
+        // List of block-level HTML tags we want to respect
+        $blockTags = [
+            'address', 'article', 'aside', 'blockquote', 'br', 'details', 'dialog', 'div', 'dl', 'dt', 'dd',
+            'fieldset', 'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+            'header', 'hgroup', 'hr', 'li', 'main', 'nav', 'ol', 'p', 'pre', 'section', 'table', 'ul',
+        ];
+
+        $document = HTMLDocument::createFromFile($path, LIBXML_NOERROR);
+
+        $lines = [trim($document->title), ''];
+        $stack = [[$document->body, true]];
+
+        while ($stack) {
+            [$node, $isBlockContext] = array_pop($stack);
+
+            if ($node->nodeType === XML_TEXT_NODE) {
+                $text = trim($node->nodeValue);
+
+                if ($isBlockContext) {
+                    $lines[] = $text;
+                } else {
+                    // Only add a space if the line isn't empty
+                    $lastIdx = count($lines) - 1;
+                    if ($lines[$lastIdx] !== '') {
+                        $lines[$lastIdx] .= ' ';
+                    }
+
+                    $lines[$lastIdx] .= $text;
+                }
+            } elseif ($node->nodeType === XML_ELEMENT_NODE) {
+                $tag = strtolower($node->nodeName);
+                $isBlock = in_array($tag, $blockTags, true);
+
+                if ($isBlock) {
+                    // Always emit a new line for this block element, even if it has no text
+                    $lines[] = '';
+                }
+
+                // Gather children in order (left-to-right)
+                $children = [];
+                for ($child = $node->firstChild; $child; $child = $child->nextSibling) {
+                    $children[] = [$child, $isBlock];
+                }
+
+                // Push children to stack in reverse order for left-to-right traversal
+                for ($i = count($children) - 1; $i >= 0; $i--) {
+                    $stack[] = $children[$i];
+                }
+            }
+        }
+
+        return implode("\n", array_filter($lines));
+    }
+
+    public static function canExtractText(MediaContentKind $kind): bool
+    {
+        return match ($kind) {
+            MediaContentKind::Image, MediaContentKind::Text, MediaContentKind::Html => true,
+            default => false,
+        };
     }
 
     /**

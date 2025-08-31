@@ -101,6 +101,12 @@ borrowed from Phabricator seems to work for now.
 Looks like we're currently missing stopword handling, which is messing up our search results a little. This may also
 be an issue with our trigram creation, we maybe should be tokenizing before trigram creation rather than embedding spaces.
 
+For audio transcription, whisper-cpp is a promising option. We could shell out to the binary, but a convenient option
+appears to be to use the shared library packaged by Fedora (`whisper-cpp` and `whisper-cpp-devel`). We'll just need to
+download and cache the model into the storage directory and then invoke it via FFI after decoding the audio with FFmpeg.
+
+Alternatively, if we did switch to Typesense for searching, it has native Whisper, CLIP, and other ML model integration.
+
 We currently store the OsHash and PHash in the main files table, we think we might also want to store the duration for
 audio and videos. There are some proposed changes in Stash to the PHash algorithm necessitating a "v2", and also adding
 an audio "AHash" algorithm (for video audio, so they'd have both, but we'd also like it for audio files). These might

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Casts\BinaryToHex;
 use App\Enums\ExtractedTextStatus;
+use App\Jobs\ExtractTextJob;
 use App\Media\MediaContentKind;
 use App\Media\MediaInfo;
 use App\Media\OpenSubtitlesHasher;
@@ -98,7 +99,7 @@ class IndexedFile extends Model
             ($this->kind->canThumbnail() && $this->thumbnail === null) ||
             ($this->kind === MediaContentKind::Video && $this->filmstrip === null) ||
             ($this->kind->canPerceptualHash() && $this->phash === null) ||
-            ($this->kind === MediaContentKind::Image && $this->extracted_text_status === ExtractedTextStatus::Pending);
+            (ExtractTextJob::canExtractText($this->kind) && $this->extracted_text_status === ExtractedTextStatus::Pending);
     }
 
     protected function casts(): array

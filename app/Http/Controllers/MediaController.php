@@ -44,6 +44,10 @@ class MediaController extends Controller
 
             $this->ensurePathCanonical($request, false);
 
+            if ($request->query->has('_debug_ocr') && $user->can('admin')) {
+                return $this->debugImageTextExtraction($filesystemPath);
+            }
+
             config(['clockwork.enable' => false]);
 
             return response()->file($filesystemPath)->setPrivate();
@@ -254,5 +258,34 @@ class MediaController extends Controller
     {
         // TODO
         return new DirectorySource($indexedDirectory, $accessControlInfo);
+    }
+
+    private function debugImageTextExtraction(string $path)
+    {
+        ini_set('max_execution_time', 0);
+
+        $spans = app('clockwork')->event('Extract Text Boxes')->run(function () use ($path) {
+            return \App\Jobs\ExtractTextJob::extractTextBoxes($path);
+        });
+
+        $altText = app('clockwork')->event('Extract Text From Boxes')->run(function () use ($spans) {
+            $text = \App\Jobs\ExtractTextJob::extractTextFromBoxes($spans);
+
+            return htmlspecialchars($text, ENT_QUOTES | ENT_HTML5);
+        });
+
+        $imageUrl = app('clockwork')->event('Visualize Text Boxes')->run(function () use ($path, $spans) {
+            $image = \App\Jobs\ExtractTextJob::visualizeTextBoxes($path, $spans);
+            $imageUrl = 'data:image/png;base64,'.base64_encode($image->pngsave_buffer());
+
+            return htmlspecialchars($imageUrl, ENT_QUOTES | ENT_HTML5);
+        });
+
+        return response(<<<EOT
+            <!DOCTYPE html>
+            <html lang="en">
+            <body>
+            <img src="$imageUrl" alt="$altText" title="$altText" style="max-width:100%; height: auto;">
+        EOT);
     }
 }

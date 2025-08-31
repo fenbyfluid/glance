@@ -67,7 +67,7 @@ class IndexFileJob implements ShouldQueue
             $generationJobs[] = (new GenerateMediaFilePerceptualHashJob($this->fileEntry, $this->path))->onQueue('index');
         }
 
-        if ($this->fileEntry->kind === MediaContentKind::Image && $this->fileEntry->extracted_text_status === ExtractedTextStatus::Pending) {
+        if (ExtractTextJob::canExtractText($this->fileEntry->kind) && $this->fileEntry->extracted_text_status === ExtractedTextStatus::Pending) {
             $generationJobs[] = (new ExtractTextJob($this->fileEntry, $this->path))->onQueue('ffprobe');
         }
 
