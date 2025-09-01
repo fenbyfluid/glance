@@ -135,13 +135,19 @@ class SearchController extends Controller
                     continue;
                 }
 
-                $results->push($result);
+                if ($results->has($path)) {
+                    $newScore = $results[$path]->__tntSearchScore__ + $result->__tntSearchScore__;
+                    $results[$path]->setAttribute('__tntSearchScore__', $newScore);
+                } else {
+                    $results->put($path, $result);
+                }
+
                 if ($results->count() >= $limit) {
                     break 2;
                 }
             }
         }
 
-        return $results;
+        return $results->sortByDesc('__tntSearchScore__')->values();
     }
 }

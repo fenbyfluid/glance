@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\Compressed;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -11,10 +12,9 @@ class IndexedFileText extends Model
 {
     use Searchable, SoftDeletes;
 
-    public $incrementing = false;
-
     protected $fillable = [
         'id',
+        'file_id',
         'text',
     ];
 
@@ -33,6 +33,13 @@ class IndexedFileText extends Model
 
     public function file(): BelongsTo
     {
-        return $this->belongsTo(IndexedFile::class, 'id');
+        return $this->belongsTo(IndexedFile::class, 'file_id');
+    }
+
+    protected function casts(): array
+    {
+        return [
+            'text' => Compressed::class,
+        ];
     }
 }

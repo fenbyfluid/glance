@@ -51,17 +51,19 @@ class ExtractTextJob implements ShouldQueue
             return;
         }
 
-        $this->file->load('extractedText');
-        if ($this->file->extractedText) {
-            $this->file->extractedText->forceDelete();
+        foreach ($this->file->extractedText()->get() as $extractedText) {
+            $extractedText->forceDelete();
         }
 
-        // The Typesense docs advise breaking long blocks of text up into a paragraphs
-        // and indexing them as if they're separate documents to improve recall performance
-        // We could turn this into a one-to-many relationship to do that
-        $this->file->extractedText()->create([
-            'text' => $text,
-        ]);
+        // The Typesense docs advise breaking long blocks of text up into a paragraphs and
+        // indexing them as if they're separate documents to improve recall performance.
+        // ~1000 characters seems to be a recommended target.
+        $chunks = $this->splitTextToChunks($text, 1000);
+
+        $this->file->extractedText()->createMany(array_map(fn ($chunk) => [
+            'file_id' => $this->file->getKey(),
+            'text' => $chunk,
+        ], $chunks));
 
         $this->file->update([
             'extracted_text_status' => ExtractedTextStatus::Complete,
@@ -158,6 +160,54 @@ class ExtractTextJob implements ShouldQueue
         }
 
         return implode("\n", array_filter($lines));
+    }
+
+    /**
+     * Splits a string into chunks, each with up to $charsPerChunk characters, breaking at the next newline.
+     * If the final chunk is less than $minimumChunkPercent of $charsPerChunk, merge it with the previous.
+     *
+     * In the interest of time, this function was partially generated with GPT-4
+     *
+     * @return list<string>
+     */
+    private function splitTextToChunks(string $text, int $charsPerChunk, float $minimumChunkPercent = 0.25): array
+    {
+        $chunks = [];
+        $offset = 0;
+        $len = mb_strlen($text);
+
+        while ($offset < $len) {
+            // If remaining text is short, just take it
+            if ($len - $offset <= $charsPerChunk) {
+                $chunks[] = mb_substr($text, $offset, null);
+                break;
+            }
+
+            // Find the next newline after the chunk boundary
+            $boundary = $offset + $charsPerChunk;
+            // Find raw byte position for mb_strpos
+            $nextNewline = mb_strpos($text, "\n", $boundary);
+
+            if ($nextNewline === false) {
+                // No more newlines, just take the rest
+                $chunks[] = mb_substr($text, $offset, null);
+                break;
+            }
+
+            // Include the newline in the chunk
+            $chunkEnd = $nextNewline + 1;
+            $chunks[] = mb_substr($text, $offset, $chunkEnd - $offset);
+            $offset = $chunkEnd;
+        }
+
+        // If the last chunk is less than 25% of $charsPerChunk, merge it with the previous
+        $count = count($chunks);
+        if ($count > 1 && mb_strlen($chunks[$count - 1]) < ($charsPerChunk * $minimumChunkPercent)) {
+            $chunks[$count - 2] .= $chunks[$count - 1];
+            array_pop($chunks);
+        }
+
+        return $chunks;
     }
 
     public static function canExtractText(MediaContentKind $kind): bool

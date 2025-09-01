@@ -12,7 +12,7 @@ use App\Utilities\Path;
 use App\Utilities\ScopeHavingAccess;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Laravel\Scout\Searchable;
 use TeamTNT\TNTSearch\Support\NGramTokenizer;
@@ -57,9 +57,9 @@ class IndexedFile extends Model
         return $this->belongsTo(IndexedDirectory::class, 'directory_id');
     }
 
-    public function extractedText(): HasOne
+    public function extractedText(): HasMany
     {
-        return $this->hasOne(IndexedFileText::class, 'id');
+        return $this->hasMany(IndexedFileText::class, 'file_id');
     }
 
     public function isIndexOutdated(\SplFileInfo $info): bool
@@ -87,7 +87,9 @@ class IndexedFile extends Model
                 'extracted_text_status' => ExtractedTextStatus::Pending,
             ]);
 
-            $this->extractedText()->first()?->forceDelete();
+            foreach ($this->extractedText()->get() as $extractedText) {
+                $extractedText->forceDelete();
+            }
         }
 
         return $this->save();
@@ -158,13 +160,13 @@ class IndexedFile extends Model
         });
 
         static::deleting(function (self $file) {
-            $extractedText = $file->extractedText()->withTrashed()->first();
+            $extractedText = $file->extractedText()->withTrashed()->get();
 
-            if ($extractedText !== null) {
+            foreach ($extractedText as $extractedTextChunk) {
                 if ($file->forceDeleting) {
-                    $extractedText->forceDelete();
-                } elseif (!$extractedText->trashed()) {
-                    $extractedText->delete();
+                    $extractedTextChunk->forceDelete();
+                } elseif (!$extractedTextChunk->trashed()) {
+                    $extractedTextChunk->delete();
                 }
             }
 
@@ -182,7 +184,11 @@ class IndexedFile extends Model
         });
 
         static::restoring(function (self $file) {
-            $file->extractedText()->withTrashed()->first()?->restore();
+            $extractedText = $file->extractedText()->withTrashed()->get();
+
+            foreach ($extractedText as $extractedTextChunk) {
+                $extractedTextChunk->restore();
+            }
         });
     }
 }
