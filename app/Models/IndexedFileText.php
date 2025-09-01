@@ -6,6 +6,7 @@ use App\Casts\Compressed;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Laravel\Scout\EngineManager;
 use Laravel\Scout\Searchable;
 
 class IndexedFileText extends Model
@@ -17,6 +18,11 @@ class IndexedFileText extends Model
         'file_id',
         'text',
     ];
+
+    public function searchableUsing()
+    {
+        return app(EngineManager::class)->engine('tntsearch_stemmed');
+    }
 
     public function toSearchableArray(): array
     {

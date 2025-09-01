@@ -77,9 +77,10 @@ class SearchController extends Controller
         });
 
         $highlighter = new \TeamTNT\TNTSearch\Support\Highlighter;
+        $stemmedQuery = (new \TeamTNT\TNTSearch\Stemmer\PorterStemmer)->stem($query);
 
-        return $results->map(function ($result) use ($query, $highlighter) {
-            $shortText = $highlighter->extractRelevant($query, $result->text, 150, 25, "\u{2026}");
+        return $results->map(function ($result) use ($highlighter, $stemmedQuery) {
+            $shortText = $highlighter->extractRelevant($stemmedQuery, $result->text, 150, 25, "\u{2026}");
             $shortText = str_replace("\n", ' ', $shortText);
 
             return [

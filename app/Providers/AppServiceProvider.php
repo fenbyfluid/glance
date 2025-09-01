@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Horizon\Horizon;
+use Laravel\Scout\EngineManager;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\Mime\MimeTypes;
 
@@ -59,6 +60,23 @@ class AppServiceProvider extends ServiceProvider
         // Ignore cache hits in the Clockwork trace (they're quick).
         app('clockwork.cache')->addFilter(function ($record) {
             return $record['type'] !== 'hit';
+        });
+
+        // Duplicate the tntsearch driver with one with a stemmer configured.
+        // Unfortunately this is fairly hacky as we don't have anyway to get a fresh original instance out of Scout.
+        $this->app[EngineManager::class]->extend('tntsearch_stemmed', function () {
+            $tnt = new \TeamTNT\TNTSearch\TNTSearch;
+
+            $driver = config('database.default');
+            $config = config('scout.tntsearch') + config("database.connections.{$driver}");
+
+            $config['stemmer'] = \TeamTNT\TNTSearch\Stemmer\PorterStemmer::class;
+
+            $tnt->loadConfig($config);
+            $tnt->setDatabaseHandle(app('db')->connection()->getPdo());
+            $tnt->engine->maxDocs = config('scout.tntsearch.maxDocs', 500);
+
+            return new \TeamTNT\Scout\Engines\TNTSearchEngine($tnt);
         });
     }
 }
