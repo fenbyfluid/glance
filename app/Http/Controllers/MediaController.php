@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\ImageExtractionIncompleteException;
 use App\Jobs\IndexDirectoryJob;
 use App\Media\MediaContentKind;
 use App\Media\Sources\DirectorySource;
@@ -264,9 +265,21 @@ class MediaController extends Controller
     {
         ini_set('max_execution_time', 0);
 
-        $spans = app('clockwork')->event('Extract Text Boxes')->run(function () use ($path) {
-            return \App\Jobs\ExtractTextJob::extractTextBoxes($path);
-        });
+        $spans = [];
+        $imageExtractionState = null;
+
+        do {
+            try {
+                $eventName = sprintf('Extract Text Boxes (%d)', $imageExtractionState['offset'] ?? 0);
+                $spans = app('clockwork')->event($eventName)->run(function () use ($path, $imageExtractionState) {
+                    return \App\Jobs\ExtractTextJob::extractTextBoxes($path, $imageExtractionState);
+                });
+
+                $imageExtractionState = null;
+            } catch (ImageExtractionIncompleteException $exception) {
+                $imageExtractionState = $exception->getStateForNextJob();
+            }
+        } while ($imageExtractionState !== null);
 
         $altText = app('clockwork')->event('Extract Text From Boxes')->run(function () use ($spans) {
             $text = \App\Jobs\ExtractTextJob::extractTextFromBoxes($spans);

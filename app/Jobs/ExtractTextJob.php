@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Enums\ExtractedTextStatus;
+use App\Exceptions\ImageExtractionIncompleteException;
 use App\Media\MediaContentKind;
 use App\Models\IndexedFile;
 use Dom\HTMLDocument;
@@ -19,10 +20,15 @@ class ExtractTextJob implements ShouldQueue
     use Batchable, Queueable;
 
     // TODO: We could require a passed in IndexedFile to always have its directory relationship populated, and thus get rid of the path argument.
+
+    /**
+     * @param  array{offset: int, boxes: array}|null  $imageExtractionState
+     */
     public function __construct(
         #[WithoutRelations]
         public IndexedFile $file,
         public string $path,
+        public ?array $imageExtractionState = null,
     ) {}
 
     public function handle(): void
@@ -36,12 +42,20 @@ class ExtractTextJob implements ShouldQueue
             $path = config('media.path').'/'.$path;
         }
 
-        $text = match ($this->file->kind) {
-            MediaContentKind::Image => $this->extractTextFromImageFile($path),
-            MediaContentKind::Text => $this->extractTextFromTextFile($path),
-            MediaContentKind::Html => $this->extractTextFromHtmlFile($path),
-            default => throw new \LogicException('Unsupported media kind: '.$this->file->kind->name),
-        };
+        try {
+            $text = match ($this->file->kind) {
+                MediaContentKind::Image => $this->extractTextFromImageFile($path, $this->imageExtractionState),
+                MediaContentKind::Text => $this->extractTextFromTextFile($path),
+                MediaContentKind::Html => $this->extractTextFromHtmlFile($path),
+                default => throw new \LogicException('Unsupported media kind: '.$this->file->kind->name),
+            };
+        } catch (ImageExtractionIncompleteException $exception) {
+            $this->appendToChain(new self($this->file, $this->path, $exception->getStateForNextJob())
+                ->onConnection($this->connection)
+                ->onQueue($this->queue));
+
+            return;
+        }
 
         if ($text === '') {
             $this->file->update([
@@ -79,9 +93,15 @@ class ExtractTextJob implements ShouldQueue
         ]);
     }
 
-    private function extractTextFromImageFile(string $path): string
+    /**
+     * @param  array{offset: int, boxes: array}|null  $imageExtractionState
+     *
+     * @throws ImageExtractionIncompleteException
+     */
+    private function extractTextFromImageFile(string $path, ?array $imageExtractionState): string
     {
-        $boxes = self::extractTextBoxes($path);
+        $boxes = self::extractTextBoxes($path, $imageExtractionState);
+
         $text = self::extractTextFromBoxes($boxes);
 
         // A bit of a hack, drop anything we get back consisting only single-line words and less than 3 lines.
@@ -219,9 +239,252 @@ class ExtractTextJob implements ShouldQueue
     }
 
     /**
+     * @param  array{offset: int, boxes: array}|null  $imageExtractionState
      * @return list<array{left: int, top: int, width: int, height: int, lines: list<array{left: int, top: int, width: int, height: int, words: list<array{conf: float, dict?: bool, text: string}>}>}>
+     *
+     * @throws ImageExtractionIncompleteException
      */
-    public static function extractTextBoxes(string $imagePath): array
+    public static function extractTextBoxes(string $imagePath, ?array $imageExtractionState = null): array
+    {
+        // Load the image into VIPS to detect size and orientation
+        $image = Vips\Image::newFromFile($imagePath);
+
+        try {
+            $wasRotated = $image->get('orientation') !== 1;
+        } catch (Vips\Exception) {
+            $wasRotated = false;
+        }
+
+        // If the image has a non-standard orientation, rotate/flip it as needed
+        if ($wasRotated) {
+            $image = $image->autorot();
+        }
+
+        // Calculate a reasonable per-tile height to process
+        $tileHeight = max(1000, (int) floor(2_500_000 / $image->width));
+        $needsTiling = $tileHeight < $image->height;
+        $tileOffset = $imageExtractionState['offset'] ?? 0;
+
+        if ($needsTiling) {
+            $remainingHeight = $image->height - $tileOffset;
+            $isLastTile = $remainingHeight < ($tileHeight * 1.5);
+            $image = $image->crop(0, $tileOffset, $image->width, $isLastTile ? $remainingHeight : $tileHeight);
+        }
+
+        $readImageFromStdin = $wasRotated || $needsTiling;
+
+        $temporaryFile = null;
+        $imageInput = $readImageFromStdin ? 'stdin' : $imagePath;
+        if ($readImageFromStdin) {
+            $temporaryFile = fopen('php://temp', 'r+b');
+
+            $target = new Vips\TargetCustom;
+
+            $target->onWrite(function ($buffer) use (&$temporaryFile) {
+                $result = fwrite($temporaryFile, $buffer);
+                if ($result === false) {
+                    // IO error
+                    return -1;
+                } else {
+                    return $result;
+                }
+            });
+
+            $target->onSeek(function ($offset, $whence) use (&$temporaryFile) {
+                if (fseek($temporaryFile, $offset, $whence)) {
+                    return -1;
+                }
+
+                return ftell($temporaryFile);
+            });
+
+            $target->onRead(function ($bufferLength) use (&$temporaryFile) {
+                return fread($temporaryFile, $bufferLength);
+            });
+
+            $target->onEnd(function () use (&$temporaryFile) {
+                fseek($temporaryFile, 0);
+
+                return 0;
+            });
+
+            $image->writeToTarget($target, basename($imagePath));
+        }
+
+        $lines = self::extractTextLinesFromTile($imageInput, $temporaryFile);
+
+        if ($imageExtractionState) {
+            $lines = self::mergeTileLines($imageExtractionState['boxes'], $lines, $tileOffset, floor($tileHeight * 0.1));
+        }
+
+        if ($needsTiling && !$isLastTile) {
+            throw new ImageExtractionIncompleteException($tileOffset + floor($tileHeight * 0.9), $lines);
+        }
+
+        // Merge overlapping lines to produce paragraphs.
+        // The $lines array will be arranged left to right then top to bottom.
+        // But they may not be contiguous, e.g. if columns are present.
+        $paragraphs = [];
+        foreach ($lines as $line) {
+            $found = false;
+            foreach ($paragraphs as $j => $paragraph) {
+                if (self::doBoxesOverlap($paragraph, $line)) {
+                    $paragraphs[$j] = self::extendBoxWithItem($paragraph, $line, 'lines');
+                    $found = true;
+                    break;
+                }
+            }
+
+            if (!$found) {
+                $paragraphs[] = [
+                    'top' => $line['top'],
+                    'left' => $line['left'],
+                    'height' => $line['height'],
+                    'width' => $line['width'],
+                    'lines' => [$line],
+                ];
+            }
+        }
+
+        return self::orderBoxes($paragraphs);
+    }
+
+    public static function extractTextFromBoxes(array $boxes): string
+    {
+        $text = '';
+
+        foreach ($boxes as $paragraph) {
+            foreach ($paragraph['lines'] as $line) {
+                foreach ($line['words'] as $word) {
+                    $text .= $word['text'].' ';
+                }
+            }
+
+            $text = rtrim($text)."\n";
+        }
+
+        return rtrim($text);
+    }
+
+    /**
+     * @param  list<array{left: int, top: int, width: int, height: int, lines: list<array{left: int, top: int, width: int, height: int, words: list<array{conf: float, dict?: bool, text: string}>}>}>  $boxes
+     */
+    public static function visualizeTextBoxes(string $imagePath, array $boxes): Vips\Image
+    {
+        $image = Vips\Image::newFromFile($imagePath)->extract_band(0, ['n' => 3]);
+
+        // Visualize the computation.
+        foreach ($boxes as $paragraph) {
+            $paragraphImage = $image->extract_area(
+                $paragraph['left'],
+                $paragraph['top'],
+                $paragraph['width'],
+                $paragraph['height'],
+            );
+
+            foreach ($paragraph['lines'] as $line) {
+                $lineImage = $paragraphImage->extract_area(
+                    $line['left'] - $paragraph['left'],
+                    $line['top'] - $paragraph['top'],
+                    $line['width'],
+                    $line['height'],
+                );
+
+                foreach ($line['words'] as $word) {
+                    $color = match ($word['dict'] ?? null) {
+                        true => [255, 0, 255],
+                        false => [0, 0, 255],
+                        null => [0, 255, 255],
+                    };
+
+                    $lineImage = $lineImage->draw_rect(
+                        $color,
+                        $word['left'] - $line['left'],
+                        $word['top'] - $line['top'],
+                        $word['width'],
+                        $word['height'],
+                    );
+
+                    $textScale = 0.5;
+                    $black = Vips\Image::black(ceil($word['width'] * $textScale), ceil($word['height'] * $textScale));
+                    $lineImage = $lineImage->composite($black, Vips\BlendMode::OVER, [
+                        'x' => ($word['left'] - $line['left']) + 1,
+                        'y' => ($word['top'] - $line['top']) + 1,
+                    ]);
+
+                    $pangoText = htmlspecialchars($word['text'], ENT_NOQUOTES | ENT_XML1, 'UTF-8');
+                    $textImage = Vips\Image::text($pangoText, [
+                        'font' => sprintf('sans %d', ceil($word['height'] * $textScale)),
+                    ]);
+
+                    $overlay = $textImage->newFromImage([255, 255, 255])
+                        ->copy(['interpretation' => 'srgb'])
+                        ->bandjoin($textImage);
+
+                    $lineImage = $lineImage->composite($overlay, Vips\BlendMode::OVER, [
+                        'x' => ($word['left'] - $line['left']) + 1,
+                        'y' => ($word['top'] - $line['top']) + 1,
+                    ])->extract_band(0, ['n' => 3]);
+                }
+
+                $lineImage = $lineImage->draw_rect(
+                    [0, 255, 0],
+                    0,
+                    0,
+                    $line['width'],
+                    $line['height'],
+                );
+
+                $paragraphImage = $paragraphImage->insert(
+                    $lineImage,
+                    $line['left'] - $paragraph['left'],
+                    $line['top'] - $paragraph['top'],
+                );
+            }
+
+            $paragraphImage = $paragraphImage->draw_rect(
+                [255, 0, 0],
+                0,
+                0,
+                $paragraph['width'],
+                $paragraph['height'],
+            );
+
+            $image = $image->insert($paragraphImage, $paragraph['left'], $paragraph['top']);
+        }
+
+        return $image;
+    }
+
+    private static function mergeTileLines(array $existingLines, array $newLines, int $newTileOffset, int $tileOverlap)
+    {
+        // TODO: This could be much better, but it is enough to start with.
+        //       The impl here removes lines entirely ($tileOverlap / 2) pixels of the tile boundary.
+        //       This leaves potentially overlapping lines that cross over into that region.
+
+        foreach ($existingLines as $li => $line) {
+            if ($line['top'] > ($newTileOffset + ($tileOverlap / 2))) {
+                unset($existingLines[$li]);
+            }
+        }
+
+        foreach ($newLines as $li => $line) {
+            $lineBottom = $line['top'] + $line['height'];
+            if ($lineBottom < ($tileOverlap / 2)) {
+                unset($newLines[$li]);
+                continue;
+            }
+
+            $newLines[$li]['top'] += $newTileOffset;
+            foreach ($line['words'] as $wi => $word) {
+                $newLines[$li]['words'][$wi]['top'] += $newTileOffset;
+            }
+        }
+
+        return array_merge($existingLines, $newLines);
+    }
+
+    private static function extractTextLinesFromTile(string $imageInput, mixed $temporaryFile): array
     {
         // TODO: This does an alright job with screenshots (which is our primary goal),
         //       but it'd be nice to do a better job with comics and comic-like art.
@@ -231,12 +494,9 @@ class ExtractTextJob implements ShouldQueue
         // TODO: We're seeing long runtime on some comic images, needs further investigation.
         //       On one test image, it took nearly 90 seconds, and the output was complete gibberish.
         //       Turns out this occurs when there is no text in the image, so something like EAST is probably the answer.
-        // TODO: There are some very large images with text that take a long time to process (300+ seconds).
-        //       The answer for those appears to be tiling them up and running the jobs in parallel.
-        //       Once the initial spans are extracted, merge them discarding duplicates from the overlap, then continue as normal.
-        $result = Process::timeout(45)->run([
+        $result = Process::timeout(45)->input($temporaryFile)->run([
             '/usr/bin/tesseract',
-            $imagePath,
+            $imageInput,
             'stdout',
             '-l', 'eng',
             '--psm', '11',
@@ -403,139 +663,7 @@ class ExtractTextJob implements ShouldQueue
             $lines[$i]['height'] += $padding * 2;
         }
 
-        // Merge overlapping lines to produce paragraphs.
-        // The $lines array will be arranged left to right then top to bottom.
-        // But they may not be contiguous, e.g. if columns are present.
-        $paragraphs = [];
-        foreach ($lines as $line) {
-            $found = false;
-            foreach ($paragraphs as $j => $paragraph) {
-                if (self::doBoxesOverlap($paragraph, $line)) {
-                    $paragraphs[$j] = self::extendBoxWithItem($paragraph, $line, 'lines');
-                    $found = true;
-                    break;
-                }
-            }
-
-            if (!$found) {
-                $paragraphs[] = [
-                    'top' => $line['top'],
-                    'left' => $line['left'],
-                    'height' => $line['height'],
-                    'width' => $line['width'],
-                    'lines' => [$line],
-                ];
-            }
-        }
-
-        return self::orderBoxes($paragraphs);
-    }
-
-    public static function extractTextFromBoxes(array $boxes): string
-    {
-        $text = '';
-
-        foreach ($boxes as $paragraph) {
-            foreach ($paragraph['lines'] as $line) {
-                foreach ($line['words'] as $word) {
-                    $text .= $word['text'].' ';
-                }
-            }
-
-            $text = rtrim($text)."\n";
-        }
-
-        return rtrim($text);
-    }
-
-    /**
-     * @param  list<array{left: int, top: int, width: int, height: int, lines: list<array{left: int, top: int, width: int, height: int, words: list<array{conf: float, dict?: bool, text: string}>}>}>  $boxes
-     */
-    public static function visualizeTextBoxes(string $imagePath, array $boxes): Vips\Image
-    {
-        $image = Vips\Image::newFromFile($imagePath)->extract_band(0, ['n' => 3]);
-
-        // Visualize the computation.
-        foreach ($boxes as $paragraph) {
-            $paragraphImage = $image->extract_area(
-                $paragraph['left'],
-                $paragraph['top'],
-                $paragraph['width'],
-                $paragraph['height'],
-            );
-
-            foreach ($paragraph['lines'] as $line) {
-                $lineImage = $paragraphImage->extract_area(
-                    $line['left'] - $paragraph['left'],
-                    $line['top'] - $paragraph['top'],
-                    $line['width'],
-                    $line['height'],
-                );
-
-                foreach ($line['words'] as $word) {
-                    $color = match ($word['dict'] ?? null) {
-                        true => [255, 0, 255],
-                        false => [0, 0, 255],
-                        null => [0, 255, 255],
-                    };
-
-                    $lineImage = $lineImage->draw_rect(
-                        $color,
-                        $word['left'] - $line['left'],
-                        $word['top'] - $line['top'],
-                        $word['width'],
-                        $word['height'],
-                    );
-
-                    $textScale = 0.5;
-                    $black = Vips\Image::black(ceil($word['width'] * $textScale), ceil($word['height'] * $textScale));
-                    $lineImage = $lineImage->composite($black, Vips\BlendMode::OVER, [
-                        'x' => ($word['left'] - $line['left']) + 1,
-                        'y' => ($word['top'] - $line['top']) + 1,
-                    ]);
-
-                    $pangoText = htmlspecialchars($word['text'], ENT_NOQUOTES | ENT_XML1, 'UTF-8');
-                    $textImage = Vips\Image::text($pangoText, [
-                        'font' => sprintf('sans %d', ceil($word['height'] * $textScale)),
-                    ]);
-
-                    $overlay = $textImage->newFromImage([255, 255, 255])
-                        ->copy(['interpretation' => 'srgb'])
-                        ->bandjoin($textImage);
-
-                    $lineImage = $lineImage->composite($overlay, Vips\BlendMode::OVER, [
-                        'x' => ($word['left'] - $line['left']) + 1,
-                        'y' => ($word['top'] - $line['top']) + 1,
-                    ])->extract_band(0, ['n' => 3]);
-                }
-
-                $lineImage = $lineImage->draw_rect(
-                    [0, 255, 0],
-                    0,
-                    0,
-                    $line['width'],
-                    $line['height'],
-                );
-
-                $paragraphImage = $paragraphImage->insert(
-                    $lineImage,
-                    $line['left'] - $paragraph['left'],
-                    $line['top'] - $paragraph['top'],
-                );
-            }
-
-            $paragraphImage = $paragraphImage->draw_rect(
-                [255, 0, 0],
-                0,
-                0,
-                $paragraph['width'],
-                $paragraph['height'],
-            );
-
-            $image = $image->insert($paragraphImage, $paragraph['left'], $paragraph['top']);
-        }
-
-        return $image;
+        return $lines;
     }
 
     private static function checkDictionaryWord(string $text): ?bool
