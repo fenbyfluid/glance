@@ -9,10 +9,12 @@ use App\Models\IndexedDirectory;
 use App\Models\IndexedFile;
 use App\Models\IndexedFileText;
 use App\Models\User;
+use App\Utilities\Path;
+use Illuminate\Database\Eloquent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
-use Laravel\Scout\Builder;
+use Laravel\Scout;
 use TeamTNT\TNTSearch\Support\NGramTokenizer;
 
 class SearchController extends Controller
@@ -22,31 +24,51 @@ class SearchController extends Controller
         $tokenizer = new NGramTokenizer(3, 3);
         $queryTrigrams = implode(' ', $tokenizer->tokenize($query));
 
-        $results = app('clockwork')->event('Filename Search')->run(function () use ($request, $queryTrigrams) {
-            return $this->performSearchWithAccessControl($request, [
-                [
-                    IndexedDirectory::search($queryTrigrams),
-                    function ($result) {
-                        // Give directories a score boost, as they're much rarer.
-                        $result->setAttribute('__tntSearchScore__', $result->__tntSearchScore__ * 1.5);
+        [$includeKinds, $pathPrefix] = $this->getFiltersFromRequest($request);
 
-                        return $result->path;
-                    },
-                ],
-                [
-                    IndexedFile::search($queryTrigrams)->query(function ($builder) {
-                        $builder->with('directory');
-                    }),
-                    function ($result) {
-                        return $result->directory->path.'/'.$result->name;
-                    },
-                ],
-            ], 20);
+        $queries = [];
+
+        // If the directory type is in the requested kinds, add the directory index.
+        if (in_array(MediaContentKind::Directory->value, $includeKinds, true)) {
+            $queries[] = [
+                IndexedDirectory::search($queryTrigrams)->query(function (Eloquent\Builder $query) use ($pathPrefix) {
+                    if ($pathPrefix !== null) {
+                        // Escape special characters for LIKE pattern matching.
+                        $escapedPath = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $pathPrefix);
+
+                        $query->whereLike('path', $escapedPath.'/%');
+                    }
+                }),
+                function (IndexedDirectory $result) {
+                    // Give directories a score boost, as they're much rarer.
+                    $result->setAttribute('__tntSearchScore__', $result->__tntSearchScore__ * 1.5);
+
+                    return $result->path;
+                },
+            ];
+        }
+
+        // If anything other than the directory type is requested, add the file index.
+        if (count($includeKinds) !== 1 || $includeKinds[0] !== MediaContentKind::Directory->value) {
+            $queries[] = [
+                IndexedFile::search($queryTrigrams)->query(function (Eloquent\Builder $builder) use ($includeKinds) {
+                    $builder->whereIn('kind', $includeKinds)->with('directory');
+                }),
+                function (IndexedFile $result) {
+                    return $result->directory->path.'/'.$result->name;
+                },
+                function (IndexedFile $result) use ($pathPrefix) {
+                    // TODO: If we do this a lot, add a materialised path to IndexedFile
+                    return $pathPrefix === null || str_starts_with($result->__path__, $pathPrefix);
+                },
+            ];
+        }
+
+        $results = app('clockwork')->event('Filename Search')->run(function () use ($request, $queries) {
+            return $this->performSearchWithAccessControl($request, $queries, 20);
         });
 
-        // TODO: If several results have nearly-identical scores, sort by number of path separators, then by name.
-
-        return $results->map(function ($result) {
+        return $results->map(function (IndexedDirectory|IndexedFile $result) {
             return match (true) {
                 $result instanceof IndexedDirectory => [
                     'kind' => MediaContentKind::Directory->value,
@@ -68,15 +90,21 @@ class SearchController extends Controller
     public function content(Request $request, string $query = '')
     {
         $results = app('clockwork')->event('Content Search')->run(function () use ($request, $query) {
-            $builder = IndexedFileText::search($query)->query(function ($builder) {
-                $builder->with('file', 'file.directory');
-            });
+            [$includeKinds, $pathPrefix] = $this->getFiltersFromRequest($request);
 
             return $this->performSearchWithAccessControl($request, [
                 [
-                    $builder,
-                    function ($result) {
+                    IndexedFileText::search($query)->query(function (Eloquent\Builder $builder) use ($includeKinds) {
+                        $builder->whereHas('file', function (Eloquent\Builder $builder) use ($includeKinds) {
+                            $builder->whereIn('kind', $includeKinds);
+                        })->with('file', 'file.directory');
+                    }),
+                    function (IndexedFileText $result) {
                         return $result->file->directory->path.'/'.$result->file->name;
+                    },
+                    function (IndexedFileText $result) use ($pathPrefix) {
+                        // TODO: As above, if we do this a lot, add a materialised path to IndexedFile
+                        return $pathPrefix === null || str_starts_with($result->__path__, $pathPrefix);
                     },
                 ],
             ], 20);
@@ -85,7 +113,7 @@ class SearchController extends Controller
         $highlighter = new \TeamTNT\TNTSearch\Support\Highlighter;
         $stemmedQuery = (new \TeamTNT\TNTSearch\Stemmer\PorterStemmer)->stem($query);
 
-        return $results->map(function ($result) use ($highlighter, $stemmedQuery) {
+        return $results->map(function (IndexedFileText $result) use ($highlighter, $stemmedQuery) {
             $shortText = $highlighter->extractRelevant($stemmedQuery, $result->text, 150, 25, "\u{2026}");
             $shortText = str_replace("\n", ' ', $shortText);
 
@@ -101,7 +129,23 @@ class SearchController extends Controller
     }
 
     /**
-     * @param  list<array{Builder, callable(\Illuminate\Database\Eloquent\Model $model): string}>  $queries
+     * @return array{ includeKinds: list<string>, pathPrefix: string|null }
+     */
+    private function getFiltersFromRequest(Request $request): array
+    {
+        $validKinds = array_map(fn ($kind) => $kind->value, MediaContentKind::cases());
+        $includeKinds = array_values(array_intersect($request->query->all('kind'), $validKinds));
+        if (count($includeKinds) === 0) {
+            $includeKinds = $validKinds;
+        }
+
+        $pathPrefix = Path::resolve($request->query('path'));
+
+        return [$includeKinds, $pathPrefix];
+    }
+
+    /**
+     * @param  list<array{Scout\Builder, callable(Eloquent\Model $model): string, callable(Eloquent\Model $model): bool}>  $queries
      */
     private function performSearchWithAccessControl(Request $request, array $queries, int $limit): Collection
     {
@@ -110,7 +154,7 @@ class SearchController extends Controller
         $accessControlUser = $accessControlOverrideUser ?? $user;
 
         $accessControlEntries = AccessControlEntry::affectingPath('')->withCount([
-            'users' => function (\Illuminate\Database\Eloquent\Builder $query) use ($accessControlUser) {
+            'users' => function (Eloquent\Builder $query) use ($accessControlUser) {
                 $query->whereKey($accessControlUser->getKey());
             },
         ])->get()->reverse();
@@ -193,6 +237,7 @@ class SearchController extends Controller
 
             $path = $nextResult->__path__;
 
+            // First check user access
             $hasAccess = false;
             foreach ($accessControlEntries as $entry) {
                 if (str_starts_with($path, $entry->path)) {
@@ -202,6 +247,12 @@ class SearchController extends Controller
             }
 
             if (!$hasAccess) {
+                continue;
+            }
+
+            // Then any custom filter function provided
+            $filterModel = $queries[$bestResultIndex][2] ?? null;
+            if ($filterModel !== null && !$filterModel($nextResult)) {
                 continue;
             }
 
@@ -218,6 +269,32 @@ class SearchController extends Controller
             }
         }
 
-        return $results->sortByDesc('__tntSearchScore__')->values();
+        return $this->sortResults($results);
+    }
+
+    private function sortResults(Collection $results): Collection
+    {
+        return $results->sort(function ($a, $b) {
+            $scoreA = $a->__tntSearchScore__;
+            $scoreB = $b->__tntSearchScore__;
+
+            // Compare scores with epsilon
+            $epsilon = 1e-6;
+            if (abs($scoreA - $scoreB) > $epsilon) {
+                // Higher score first
+                return ($scoreA > $scoreB) ? -1 : 1;
+            }
+
+            // Then by path depth (more separators = deeper path = lower priority)
+            $depthA = substr_count($a->__path__, '/');
+            $depthB = substr_count($b->__path__, '/');
+            if ($depthA !== $depthB) {
+                // Shallow path first
+                return ($depthA < $depthB) ? -1 : 1;
+            }
+
+            // Finally natural sort on path (case-insensitive)
+            return strnatcasecmp($a->__path__, $b->__path__);
+        })->values();
     }
 }

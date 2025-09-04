@@ -8,13 +8,17 @@ class Path
      * Resolves an input like "/foo/../bar/./bee/" to "bar/bee".
      * Attempts to navigate above the root directory will be dropped.
      *
-     * @template T of string|string[]
+     * @template T of string|string[]|null
      *
      * @param  T  $path
      * @return T
      */
-    public static function resolve(string|array $path): string|array
+    public static function resolve(string|array|null $path): string|array|null
     {
+        if ($path === null) {
+            return null;
+        }
+
         $exploded = $path;
         if (!is_array($exploded)) {
             $exploded = explode('/', $path);

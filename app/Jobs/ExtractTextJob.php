@@ -472,6 +472,7 @@ class ExtractTextJob implements ShouldQueue
             $lineBottom = $line['top'] + $line['height'];
             if ($lineBottom < ($tileOverlap / 2)) {
                 unset($newLines[$li]);
+
                 continue;
             }
 
