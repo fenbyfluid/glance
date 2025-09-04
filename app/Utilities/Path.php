@@ -50,7 +50,6 @@ class Path
 
         if (!is_dir($basePath.'/'.$subDirs)) {
             if (!@mkdir($basePath.'/'.$subDirs, 0755, true)) {
-                dump($basePath.'/'.$subDirs);
                 throw new \RuntimeException('Unable to create thumbnail directory '.$subDirs);
             }
         }

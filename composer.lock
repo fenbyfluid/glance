@@ -6070,12 +6070,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/fenbyfluid/laravel-scout-tntsearch-driver.git",
-                "reference": "90d2049d021c4f7f4ee14a12b3e4fa1ce3ff6224"
+                "reference": "b26e94b08390c459e753e85c8fb2985b2111d709"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/fenbyfluid/laravel-scout-tntsearch-driver/zipball/90d2049d021c4f7f4ee14a12b3e4fa1ce3ff6224",
-                "reference": "90d2049d021c4f7f4ee14a12b3e4fa1ce3ff6224",
+                "url": "https://api.github.com/repos/fenbyfluid/laravel-scout-tntsearch-driver/zipball/b26e94b08390c459e753e85c8fb2985b2111d709",
+                "reference": "b26e94b08390c459e753e85c8fb2985b2111d709",
                 "shasum": ""
             },
             "require": {
@@ -6143,7 +6143,7 @@
                     "url": "https://github.com/teamtnt"
                 }
             ],
-            "time": "2025-08-30T22:59:48+00:00"
+            "time": "2025-09-04T18:48:41+00:00"
         },
         {
             "name": "teamtnt/tntsearch",
