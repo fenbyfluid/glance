@@ -28,6 +28,7 @@ Route::middleware(['auth', 'activated'])->group(function () {
     });
 
     Route::prefix('_search')->name('search.')->group(function () {
+        Route::get('/', [SearchController::class, 'index'])->name('index');
         Route::get('/name/{query?}', [SearchController::class, 'name'])->name('name');
         Route::get('/content/{query?}', [SearchController::class, 'content'])->name('content');
     });

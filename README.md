@@ -15,8 +15,8 @@ Web-based media viewer
   * [ ] Extensions to client-side JS
 * [x] Inline README rendering
 * [ ] Pagination would be nice to control HTML size
-* [ ] In-database additional metadata storage
-  * [ ] Indexed on file path
+* [x] In-database additional metadata storage
+  * [x] Indexed on file path
   * [ ] Indexed on file OsHash to handle file moves
 * Background queue tasks:
   * [x] Thumbnail generation
@@ -35,17 +35,17 @@ Web-based media viewer
   * [x] UI for managing authorization rules
 * [x] Static files must be authorized too (with Nginx)
 * [ ] Public link generation - directory or file
-* [ ] Search
+* [x] Search
   * [x] Ngram search for file/directory names
-  * [ ] Full text search on "descriptions"
+  * [x] Full text search on "descriptions"
     * [x] Image text OCR
-    * [ ] Text file contents
-    * [ ] HTML file contents
+    * [x] Text file contents
+    * [x] HTML file contents
     * [ ] Audio transcripts
     * [ ] Scene synopsis
     * [ ] Tumblr posts
-  * [ ] Flexible attribute-based filtering / ordering
-  * [ ] Optional filtering to current / child directories
+  * [x] Attribute-based filtering
+  * [x] Optional filtering to current / child directories
 * [ ] File upload
 * [ ] File deletion and renaming, maybe ?
 

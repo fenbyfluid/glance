@@ -76,6 +76,9 @@ class AppServiceProvider extends ServiceProvider
             $tnt->setDatabaseHandle(app('db')->connection()->getPdo());
             $tnt->engine->maxDocs = config('scout.tntsearch.maxDocs', 500);
 
+            // TODO: This doesn't appear to change anything.
+            $tnt->asYouType(true);
+
             return new \TeamTNT\Scout\Engines\TNTSearchEngine($tnt);
         });
     }

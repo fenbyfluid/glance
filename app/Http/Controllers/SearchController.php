@@ -13,12 +13,18 @@ use App\Utilities\Path;
 use Illuminate\Database\Eloquent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Laravel\Scout;
 use TeamTNT\TNTSearch\Support\NGramTokenizer;
 
 class SearchController extends Controller
 {
+    public function index()
+    {
+        return view('search.index');
+    }
+
     public function name(Request $request, string $query = '')
     {
         $tokenizer = new NGramTokenizer(3, 3);
@@ -64,31 +70,44 @@ class SearchController extends Controller
             ];
         }
 
+        $searchOverheated = false;
+        Event::listen(SearchOverheated::class, function () use (&$searchOverheated) {
+            $searchOverheated = true;
+        });
+
         $results = app('clockwork')->event('Filename Search')->run(function () use ($request, $queries) {
             return $this->performSearchWithAccessControl($request, $queries, 20);
         });
 
-        return $results->map(function (IndexedDirectory|IndexedFile $result) {
-            return match (true) {
-                $result instanceof IndexedDirectory => [
-                    'kind' => MediaContentKind::Directory->value,
-                    'name' => $result->name,
-                    'path' => $result->__path__.'/',
-                    'score' => $result->__tntSearchScore__,
-                ],
-                $result instanceof IndexedFile => [
-                    'kind' => $result->kind->value,
-                    'name' => $result->name,
-                    'path' => $result->__path__,
-                    'thumbnail' => $result->thumbnail,
-                    'score' => $result->__tntSearchScore__,
-                ],
-            };
-        });
+        return [
+            'overheated' => $searchOverheated,
+            'results' => $results->map(function (IndexedDirectory|IndexedFile $result) {
+                return match (true) {
+                    $result instanceof IndexedDirectory => [
+                        'kind' => MediaContentKind::Directory->value,
+                        'name' => $result->name,
+                        'path' => $result->path,
+                        'score' => $result->__tntSearchScore__,
+                    ],
+                    $result instanceof IndexedFile => [
+                        'kind' => $result->kind->value,
+                        'name' => $result->name,
+                        'path' => $result->directory->path,
+                        'thumbnail' => $result->thumbnail,
+                        'score' => $result->__tntSearchScore__,
+                    ],
+                };
+            }),
+        ];
     }
 
     public function content(Request $request, string $query = '')
     {
+        $searchOverheated = false;
+        Event::listen(SearchOverheated::class, function () use (&$searchOverheated) {
+            $searchOverheated = true;
+        });
+
         $results = app('clockwork')->event('Content Search')->run(function () use ($request, $query) {
             [$includeKinds, $pathPrefix] = $this->getFiltersFromRequest($request);
 
@@ -113,19 +132,23 @@ class SearchController extends Controller
         $highlighter = new \TeamTNT\TNTSearch\Support\Highlighter;
         $stemmedQuery = (new \TeamTNT\TNTSearch\Stemmer\PorterStemmer)->stem($query);
 
-        return $results->map(function (IndexedFileText $result) use ($highlighter, $stemmedQuery) {
-            $shortText = $highlighter->extractRelevant($stemmedQuery, $result->text, 150, 25, "\u{2026}");
-            $shortText = str_replace("\n", ' ', $shortText);
+        return [
+            'overheated' => $searchOverheated,
+            'results' => $results->map(function (IndexedFileText $result) use ($highlighter, $stemmedQuery) {
+                // TODO: Add markup to highlight the term matched.
+                $shortText = $highlighter->extractRelevant($stemmedQuery, $result->text, 150, 25, "\u{2026}");
+                $shortText = str_replace("\n", ' ', $shortText);
 
-            return [
-                'kind' => $result->file->kind->value,
-                'name' => $result->file->name,
-                'path' => $result->__path__,
-                'thumbnail' => $result->file->thumbnail,
-                'text' => $shortText,
-                'score' => $result->__tntSearchScore__,
-            ];
-        });
+                return [
+                    'kind' => $result->file->kind->value,
+                    'name' => $result->file->name,
+                    'path' => $result->file->directory->path,
+                    'thumbnail' => $result->file->thumbnail,
+                    'text' => $shortText,
+                    'score' => $result->__tntSearchScore__,
+                ];
+            }),
+        ];
     }
 
     /**
@@ -171,7 +194,8 @@ class SearchController extends Controller
                 throw new \LogicException('Bad search engine for '.get_class($builder->model));
             }
 
-            $maxPages = 5;
+            // TODO: We may want to tune this depending on the type of search being performed.
+            $maxPages = 10;
 
             $indexResults = $builder->take(($limit * 2 * $maxPages) + 1)->raw();
             $totalIndexResults = $indexResults['hits'];

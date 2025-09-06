@@ -15,7 +15,7 @@
     </head>
     <body class="font-sans antialiased">
         {{-- pb-px works around a rendering issue where the background doesn't cover the children's bottom margin --}}
-        <div class="min-h-screen pb-px bg-gray-100 dark:bg-gray-900">
+        <div class="min-h-screen pb-px bg-gray-100 dark:bg-gray-900" x-data :class="$store.searchModal.open && 'fixed h-screen w-screen'">
             @include('layouts.navigation')
 
             <!-- Page Heading -->
