@@ -34,6 +34,7 @@ class IndexedFile extends Model
         'phash',
         'thumbnail',
         'filmstrip',
+        'stash_scene_id',
         'extracted_text_status',
     ];
 
@@ -60,6 +61,11 @@ class IndexedFile extends Model
     public function extractedText(): HasMany
     {
         return $this->hasMany(IndexedFileText::class, 'file_id');
+    }
+
+    public function stashScene(): BelongsTo
+    {
+        return $this->belongsTo(StashScene::class);
     }
 
     public function isIndexOutdated(\SplFileInfo $info): bool

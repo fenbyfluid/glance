@@ -26,7 +26,7 @@ Web-based media viewer
   * [ ] `whos-that-bean` facial recognition
   * [x] `phash` generation
   * [x] OsHash generation
-* [ ] `phash` lookup in StashDB
+* [x] `phash` lookup in StashDB
 * [x] Real-time streaming
   * [x] Static file streaming
   * [x] Fallback to conversion
@@ -42,7 +42,7 @@ Web-based media viewer
     * [x] Text file contents
     * [x] HTML file contents
     * [ ] Audio transcripts
-    * [ ] Scene synopsis
+    * [x] Scene synopsis
     * [ ] Tumblr posts
   * [x] Attribute-based filtering
   * [x] Optional filtering to current / child directories

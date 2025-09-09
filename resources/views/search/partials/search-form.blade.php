@@ -25,7 +25,7 @@
             <div class="grid grid-cols-3 gap-1 gap-x-4">
                 @foreach(\App\Media\MediaContentKind::cases() as $kind)
                     <div class="flex items-center gap-2">
-                        <input id="kind-{{ $kind->value }}" type="checkbox" name="kind[]" value="{{ $kind->value }}" data-content-searchable="{{ \App\Jobs\ExtractTextJob::canExtractText($kind) ? 1 : 0 }}" class="peer text-indigo-600 focus:ring-indigo-600 disabled:border-gray-300 disabled:text-gray-300">
+                        <input id="kind-{{ $kind->value }}" type="checkbox" name="kind[]" value="{{ $kind->value }}" data-content-searchable="{{ (\App\Jobs\ExtractTextJob::canExtractText($kind) || $kind === \App\Media\MediaContentKind::Video) ? 1 : 0 }}" class="peer text-indigo-600 focus:ring-indigo-600 disabled:border-gray-300 disabled:text-gray-300">
                         <label for="kind-{{ $kind->value }}" class="grow-1 peer-disabled:text-gray-400">{{ __($kind->displayName()) }}</label>
                     </div>
                 @endforeach
