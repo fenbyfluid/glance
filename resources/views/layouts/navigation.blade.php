@@ -15,10 +15,10 @@
                 </div>
 
                 <!-- Navigation Links -->
-                <div class="hidden space-x-8 sm:-my-px sm:ms-10 sm:flex grow">
-                    @isset($navigation)
-                        {{ $navigation }}
-                    @else
+                @isset($navigation)
+                    {{ $navigation }}
+                @else
+                    <div class="hidden space-x-8 sm:-my-px sm:ms-10 sm:flex grow">
                         <x-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
                             {{ __('Files') }}
                         </x-nav-link>
@@ -31,8 +31,8 @@
                                 {{ __('Manage Access') }}
                             </x-nav-link>
                         @endcan
-                    @endisset
-                </div>
+                    </div>
+                @endisset
             </div>
 
             <!-- Settings Dropdown -->

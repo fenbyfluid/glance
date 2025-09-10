@@ -280,9 +280,9 @@ class SearchController extends Controller
                 continue;
             }
 
-            // Merge the result into the collection, summing up the scores
+            // Merge the result into the collection, taking the highest score
             if ($results->has($path)) {
-                $newScore = $results[$path]->__tntSearchScore__ + $nextResult->__tntSearchScore__;
+                $newScore = max($results[$path]->__tntSearchScore__, $nextResult->__tntSearchScore__);
                 $results[$path]->setAttribute('__tntSearchScore__', $newScore);
             } else {
                 $results->put($path, $nextResult);

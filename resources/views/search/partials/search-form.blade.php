@@ -22,7 +22,7 @@
                     <label for="path" class="grow-1 peer-disabled:text-gray-400">{{ __('Current Directory') }}</label>
                 </div>
             </div>
-            <div class="grid grid-cols-3 gap-1 gap-x-4">
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-1 gap-x-4">
                 @foreach(\App\Media\MediaContentKind::cases() as $kind)
                     <div class="flex items-center gap-2">
                         <input id="kind-{{ $kind->value }}" type="checkbox" name="kind[]" value="{{ $kind->value }}" data-content-searchable="{{ (\App\Jobs\ExtractTextJob::canExtractText($kind) || $kind === \App\Media\MediaContentKind::Video) ? 1 : 0 }}" class="peer text-indigo-600 focus:ring-indigo-600 disabled:border-gray-300 disabled:text-gray-300">
@@ -36,7 +36,7 @@
     <div class="grow overflow-y-auto rounded-t-lg">
         <div class="space-y-3 pointer-events-auto">
             <template x-for="result in results" :key="result.path + '/' + result.name">
-                <a :href="'/' + result.path" class="p-2 sm:p-4 bg-white dark:bg-gray-800 shadow-sm sm:rounded-lg flex gap-2 sm:gap-3 pointer-events-auto">
+                <a :href="'/' + result.path" class="p-2 sm:p-4 bg-white dark:bg-gray-800 shadow-sm rounded-lg flex gap-2 sm:gap-3 pointer-events-auto">
                     <div class="shrink-0 grow-0 overflow-hidden w-[160px] h-[90px] rounded-sm bg-black flex justify-center items-center">
                         <template x-if="result.thumbnail">
                             <img loading="lazy" :src="`/_image/${result.thumbnail}.avif`" class="rounded-sm" />
@@ -59,7 +59,7 @@
             </template>
 
             <template x-if="overheated">
-                <div class="p-2 sm:p-4 bg-white dark:bg-gray-800 shadow-sm sm:rounded-lg text-center pointer-events-auto">
+                <div class="p-2 sm:p-4 bg-white dark:bg-gray-800 shadow-sm rounded-lg text-center pointer-events-auto">
                     Search overheated, results may be incomplete
                     <div class="text-sm text-gray-500">
                         Try a more specific search query if you have not found what you're looking for
