@@ -14,7 +14,7 @@ Web-based media viewer
     * [ ] Chronological (for Telegram)
   * [ ] Extensions to client-side JS
 * [x] Inline README rendering
-* [ ] Pagination would be nice to control HTML size
+* [x] Pagination would be nice to control HTML size
 * [x] In-database additional metadata storage
   * [x] Indexed on file path
   * [ ] Indexed on file OsHash to handle file moves

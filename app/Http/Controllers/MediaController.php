@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\ImageExtractionIncompleteException;
 use App\Jobs\IndexDirectoryJob;
+use App\Media\GroupedMediaPaginator;
 use App\Media\MediaContentKind;
 use App\Media\Sources\DirectorySource;
 use App\Media\TranscodeManager;
@@ -83,7 +84,7 @@ class MediaController extends Controller
             }
 
             // TODO: Show a proper job status screen with progress info.
-            // TODO: Sometimes when the page refershes to the directory contents, it hasn't actually updated yet.
+            // TODO: Sometimes when the page refreshes to the directory contents, it hasn't actually updated yet.
             return response($batch ?? '')->header('Refresh', '1');
         }
 
@@ -101,7 +102,6 @@ class MediaController extends Controller
         // TODO: If the directory includes an index.html file, it should be displayed instead of the directory listing.
 
         $contents = app('clockwork')->event('Getting contents')->run(function () use ($source) {
-            // TODO: Paginate this.
             return $source->getContents();
         });
 
@@ -128,11 +128,44 @@ class MediaController extends Controller
             return $grouped;
         });
 
+        $itemsPerPage = 100;
+        $currentPage = $request->query->get('page', 1);
+
+        $skippedItems = 0;
+        $currentPageCount = 0;
+        $currentPageContents = [];
+
+        foreach ($grouped as $i => $group) {
+            foreach ($group as $item) {
+                if ($skippedItems < (($currentPage - 1) * $itemsPerPage)) {
+                    $skippedItems++;
+
+                    continue;
+                }
+
+                if (!isset($currentPageContents[$i])) {
+                    $currentPageContents[$i] = [];
+                }
+
+                $currentPageContents[$i][] = $item;
+
+                $currentPageCount++;
+                if ($currentPageCount >= $itemsPerPage) {
+                    break 2;
+                }
+            }
+        }
+
+        $paginator = new GroupedMediaPaginator($currentPageContents, count($contents), $itemsPerPage, $currentPage, [
+            'path' => $request->getPathInfo(),
+            'itemCount' => $currentPageCount,
+        ]);
+
         return view('media.index', [
             'path' => $path,
             'breadcrumbs' => $this->getCrumbsForPath($path),
             'readme' => $source->getReadmeHtml(),
-            'contents' => $grouped,
+            'contents' => $paginator,
             'accessControlOverrideUser' => $accessControlOverrideUser,
         ]);
     }

@@ -62,13 +62,15 @@
         </div>
     @endisset
 
+    <div class="my-8 mx-4 sm:mx-6 lg:mx-8 empty:hidden">{{ $contents->links('media.pagination') }}</div>
+
     <div>
         @foreach($contents as $group)
             <div class="my-8 sm:px-6 lg:px-8 gap-4 grid grid-cols-[repeat(auto-fill,320px)] justify-center">
                 @foreach($group as $content)
                     <a
                         href="{{ media_url($path.'/'.$content->path) }}"
-                        class="block bg-white dark:bg-gray-800 overflow-hidden shadow-xs sm:rounded-lg"
+                        class="block bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-lg"
                         {!! $content->kind->lightboxType() ? 'data-fancybox="file" data-type="'.htmlspecialchars($content->kind->lightboxType()).'"' : '' !!}
                         {!! $content->kind ? 'data-kind="'.htmlspecialchars($content->kind->value).'"' : '' !!}
                         {!! isset($content->mimeType) ? 'data-mime="'.htmlspecialchars($content->mimeType).'"' : '' !!}
@@ -98,9 +100,11 @@
         @endforeach
     </div>
 
+    <div class="my-8 mx-4 sm:mx-6 lg:mx-8 empty:hidden">{{ $contents->links('media.pagination') }}</div>
+
     @isset($readme)
         {{-- TODO: Can we do anything better with security here? Maybe Markdown? --}}
-        <div class="my-12 sm:mx-6 lg:mx-8 p-6 bg-white dark:bg-gray-800 shadow-xs sm:rounded-lg">
+        <div class="my-8 sm:mx-6 lg:mx-8 p-6 bg-white dark:bg-gray-800 shadow-sm sm:rounded-lg">
             <div class="mx-auto prose dark:prose-invert">
                 {!! $readme !!}
             </div>
