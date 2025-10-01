@@ -12,7 +12,7 @@ Route::middleware('guest')->group(function () {
     Route::post('_login', [AuthenticatedSessionController::class, 'store']);
 
     Route::get('_invite/{user}', [InvitedUserController::class, 'login'])
-        ->middleware(['signed', 'throttle:6,1'])
+        ->middleware(['signed:relative', 'throttle:6,1'])
         ->name('invite.link');
 });
 

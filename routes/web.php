@@ -5,9 +5,14 @@ use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SearchController;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 require __DIR__.'/auth.php';
+
+Route::get('/_get_remote_ip', function (Request $request) {
+    return response($request->ip(), 200, ['Content-Type' => 'text/plain']);
+})->name('utility.discover_ip');
 
 Route::middleware(['auth', 'activated'])->group(function () {
     Route::get('/_profile', [ProfileController::class, 'edit'])->name('profile.edit');

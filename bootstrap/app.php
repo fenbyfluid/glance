@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\MediaController;
 use App\Http\Middleware\EnsureUserIsActivated;
+use App\Http\Middleware\RedirectLocalAccess;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -17,6 +18,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->alias([
             'activated' => EnsureUserIsActivated::class,
+        ])->web([], [
+            RedirectLocalAccess::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

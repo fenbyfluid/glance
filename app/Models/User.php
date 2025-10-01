@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Http\Middleware\RedirectLocalAccess;
 use Illuminate\Auth\Authenticatable;
 use Illuminate\Contracts\Auth\Access\Authorizable as AuthorizableContract;
 use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
@@ -128,10 +129,19 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
             return null;
         }
 
-        return URL::temporarySignedRoute(
+        $relativePath = URL::temporarySignedRoute(
             'invite.link',
             Carbon::now()->addDays(7),
-            ['user' => $this]);
+            ['user' => $this],
+            false);
+
+        $request = URL::getRequest();
+        $host = $request->getHost();
+        $linkHost = RedirectLocalAccess::getExternalHostIfLocal($host) ?? $host;
+
+        return URL::format(
+            $request->getScheme().'://'.$linkHost.$request->getBaseUrl(),
+            $relativePath);
     }
 
     public static function setAccessControlOverrideUser(Request $request, ?User $user): void
