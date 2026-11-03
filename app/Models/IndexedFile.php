@@ -38,6 +38,18 @@ class IndexedFile extends Model
         'extracted_text_status',
     ];
 
+    public function shouldBeSearchable(): true
+    {
+        // TODO: Exclude files with known generated names from search (e.g. Telegram, Tumblr)
+        //       We probably need to store this as part of the record and set it during creation, as the directory relationship is unlikely to be populated.
+        return true;
+    }
+
+    public function searchIndexShouldBeUpdated(): bool
+    {
+        return $this->wasChanged('name') || !$this->shouldBeSearchable();
+    }
+
     public function toSearchableArray(): array
     {
         $tokenizer = new NGramTokenizer(3, 3);

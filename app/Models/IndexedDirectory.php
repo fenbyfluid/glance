@@ -22,6 +22,17 @@ class IndexedDirectory extends Model
         'mtime',
     ];
 
+    public function shouldBeSearchable(): true
+    {
+        // TODO: Exclude directories internal to plugin integrations from search (e.g. Tumblr/media)
+        return true;
+    }
+
+    public function searchIndexShouldBeUpdated(): bool
+    {
+        return $this->wasChanged('name') || !$this->shouldBeSearchable();
+    }
+
     public function toSearchableArray(): array
     {
         $tokenizer = new NGramTokenizer(3, 3);

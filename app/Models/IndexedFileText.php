@@ -24,6 +24,11 @@ class IndexedFileText extends Model
         return app(EngineManager::class)->engine('tntsearch_stemmed');
     }
 
+    public function searchIndexShouldBeUpdated(): bool
+    {
+        return $this->wasChanged('text');
+    }
+
     public function toSearchableArray(): array
     {
         return [
