@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Utilities\Path;
 use Illuminate\Bus\BatchRepository;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -61,31 +62,11 @@ class MediaController extends Controller
 
         $this->ensurePathCanonical($request, true);
 
-        /** @var IndexedDirectory $directoryEntry */
         $directoryEntry = IndexedDirectory::where('path', $path)->first();
 
-        if (!$directoryEntry || $directoryEntry->isIndexOutdated($pathInfo)) {
-            $lockKey = __CLASS__.':index:'.hash('xxh128', $path);
-            $lock = Cache::lock($lockKey, 60);
-
-            $batchKey = $lockKey.':batch';
-
-            if ($lock->get()) {
-                $lockOwner = $lock->owner();
-                $batch = (new IndexDirectoryJob($path, 0, rootDirectory: $directoryEntry))
-                    ->asBatch()
-                    ->finally(function () use ($lockKey, $lockOwner) {
-                        Cache::restoreLock($lockKey, $lockOwner)->release();
-                    })->dispatch();
-
-                Cache::put($batchKey, $batch->id, 60);
-            } else {
-                $batch = resolve(BatchRepository::class)->find(Cache::get($batchKey));
-            }
-
-            // TODO: Show a proper job status screen with progress info.
-            // TODO: Sometimes when the page refreshes to the directory contents, it hasn't actually updated yet.
-            return response($batch ?? '')->header('Refresh', '1');
+        $indexStatusResponse = $this->ensureDirectoryIndexed($request, $path, $pathInfo, $directoryEntry);
+        if ($indexStatusResponse) {
+            return $indexStatusResponse;
         }
 
         // TODO: There are a few ideas here for implementing all the sorting and pagination in SQL land, and it's
@@ -241,7 +222,7 @@ class MediaController extends Controller
             'path' => $path,
             'breadcrumbs' => $this->getCrumbsForPath($path),
             'readme' => $message,
-            'contents' => [],
+            'contents' => new LengthAwarePaginator([], 0, 1),
             'accessControlOverrideUser' => User::getAccessControlOverrideUser($request),
         ]), $statusCode);
     }
@@ -292,6 +273,45 @@ class MediaController extends Controller
     {
         // TODO
         return new DirectorySource($indexedDirectory, $accessControlInfo);
+    }
+
+    private function ensureDirectoryIndexed(Request $request, string $path, \SplFileInfo $pathInfo, ?IndexedDirectory $directoryEntry): ?Response
+    {
+        // How often to refresh the indexing progress screen.
+        $retryIntervalInMinutes = 1;
+
+        // We could wrap this in a lock as well, but indexing is idempotent and two are unlikely to dispatch simultaneously.
+        $batchKey = __CLASS__.':index:'.hash('xxh128', $path).':batch';
+        $batchId = Cache::get($batchKey);
+        $batch = ($batchId !== null) ? resolve(BatchRepository::class)->find($batchId) : null;
+
+        // If there's no existing batch and the directory needs indexing, start a new job.
+        if (!$batch && (!$directoryEntry || $directoryEntry->isIndexOutdated($pathInfo))) {
+            $batch = (new IndexDirectoryJob($path, 0, rootDirectory: $directoryEntry))
+                ->asBatch()
+                ->dispatch();
+        }
+
+        // If we have a running batch, reset the TTL and return the status page.
+        if ($batch && !$batch->finished()) {
+            // Make it last twice as long as the refresh interval.
+            Cache::put($batchKey, $batch->id, $retryIntervalInMinutes * 2 * 60);
+
+            return response(view('media.index', [
+                'path' => $path,
+                'breadcrumbs' => $this->getCrumbsForPath($path),
+                'readme' => sprintf('%d/%d', $batch->processedJobs(), $batch->totalJobs),
+                'contents' => new LengthAwarePaginator([], 0, 1),
+                'accessControlOverrideUser' => User::getAccessControlOverrideUser($request),
+            ]))->header('Refresh', $retryIntervalInMinutes);
+        }
+
+        // If we had a batch, it's now done, remove the record for it against the directory.
+        if ($batchId !== null) {
+            Cache::forget($batchKey);
+        }
+
+        return null;
     }
 
     private function debugImageTextExtraction(string $path)
