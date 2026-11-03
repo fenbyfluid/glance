@@ -21,11 +21,9 @@ class MediaTranscode
         private readonly int $segmentLength,
         private readonly int $initialSegment,
     ) {
-        $this->process = Process::env([
-            'AV_LOG_FORCE_NOCOLOR' => '1',
-        ])->path($this->outputDirectory)->forever()->quietly()->start([
+        $command = [
             config('media.ffmpeg_bin', '/usr/bin/ffmpeg'),
-            '-loglevel', '+repeat+level+'.config('media.transcode_log_level', 'fatal'),
+            '-loglevel', '+repeat+level+'.config('media.transcode_log_level', 'error'),
             '-hide_banner',
             '-nostats',
             ...$this->getInputArguments(),
@@ -33,7 +31,11 @@ class MediaTranscode
             ...$this->getAudioEncodeArguments(),
             ...$this->getOutputArguments(),
             '-',
-        ], function ($type, $buffer) {
+        ];
+
+        $this->process = Process::env([
+            'AV_LOG_FORCE_NOCOLOR' => '1',
+        ])->path($this->outputDirectory)->forever()->quietly()->start($command, function ($type, $buffer) {
             if ($type === 'out') {
                 $this->onPlaylistOutput($buffer);
 
@@ -48,6 +50,8 @@ class MediaTranscode
             }
         });
 
+        Log::debug(sprintf('[ffmpeg-%s] %s', basename($this->outputDirectory), implode(' ', array_map(fn ($arg) => escapeshellarg($arg), $command))));
+
         // Wait for FFmpeg to exit or produce a valid HLS playlist.
         while ($this->process->running() && !isset($this->latestSegment)) {
             usleep(10_000); // 10ms
@@ -56,6 +60,9 @@ class MediaTranscode
         // If it ended without a playlist, something failed.
         if (!$this->process->running()) {
             $result = $this->process->wait();
+
+            // Failed with code 127 and "Generic error in an external library"?
+            // Run at "error" level and check for "CUDA_ERROR_NO_DEVICE: no CUDA-capable device is detected"
 
             throw new \RuntimeException(sprintf('Failed to start transcode with code %d', $result->exitCode()));
         }
@@ -139,9 +146,11 @@ class MediaTranscode
         $keyFrameExpression = sprintf('expr:gte(t,n_forced*%d)', $this->segmentLength);
 
         // TODO: Add a non-hwaccel variant.
+        // TODO: If this fails due to the nvidia driver failing to load, it's really, really difficult to debug.
+        //       We should at least write something out to the cache/session and display it in the UI.
         return [
             // Process at 5x speed for first 10 seconds, then 1x speed, scale to 1920px wide, at least 30 fps.
-            '-filter:v', "sendcmd=c='10.0 realtime speed 1.0',realtime=speed=5.0,hwupload_cuda,scale_npp=w='min(1920,iw)':h=-2,fps='max(30,source_fps)'",
+            '-filter:v', "sendcmd=c='10.0 realtime speed 1.0',realtime=speed=5.0,hwupload_cuda,scale_cuda=w='min(1920,iw)':h=-2,fps='max(30,source_fps)'",
             '-c:v', 'h264_nvenc',
             '-preset:v', 'p7',
             '-tune:v', 'hq',

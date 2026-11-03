@@ -89,9 +89,13 @@ readonly class TranscodeManager
 
         Cache::set($this->getCacheKey('last-segment'), [$segment, now()->getTimestamp()], self::CACHE_TTL);
 
+        Log::debug(sprintf('Segment %d of %d', $segment, $segmentCount));
+
         if (!$this->ensureTranscodeMonitorRunning()) {
             abort(500);
         }
+
+        Log::debug('transcode monitor running');
 
         $segmentPath = $this->sessionDir.'/'.$segment.'.ts';
 
@@ -156,9 +160,14 @@ readonly class TranscodeManager
 
     private function ensureTranscodeMonitorRunning(): bool
     {
+        // TODO: There's a bug here where this lock can get held forever if FFmpeg fails to start.
+        //       One theory is that this can happen if the PHP worker is killed while waiting for the startup lock.
+        //       Perhaps running lock shouldn't be taken by us until it's successfully started?
         $runningLockName = $this->getCacheKey('monitor-lock');
         $runningLock = Cache::lock($runningLockName);
         if (!$runningLock->get()) {
+            log::debug('running lock held');
+
             return true;
         }
 
@@ -184,6 +193,8 @@ readonly class TranscodeManager
                 $preStartupLockOwner,
                 $runningLockOwner,
             ]);
+
+            Log::debug('process started');
 
             // This one has a very short timeout as we're just trying to catch very fatal process start issues.
             // Uncomment this block to diagnose early startup failures, disabled by default to avoid blocking the queue.
