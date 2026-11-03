@@ -87,6 +87,7 @@ class SearchController extends Controller
                         'kind' => MediaContentKind::Directory->value,
                         'name' => $result->name,
                         'path' => $result->path,
+                        'link' => '/'.$result->__path__.'/',
                         'score' => $result->__tntSearchScore__,
                     ],
                     $result instanceof IndexedFile => [
@@ -94,6 +95,7 @@ class SearchController extends Controller
                         'name' => $result->name,
                         'path' => $result->directory->path,
                         'thumbnail' => $result->thumbnail,
+                        'link' => '/'.$result->__path__,
                         'score' => $result->__tntSearchScore__,
                     ],
                 };
@@ -145,6 +147,7 @@ class SearchController extends Controller
                     'path' => $result->file->directory->path,
                     'thumbnail' => $result->file->thumbnail,
                     'text' => $shortText,
+                    'link' => '/'.$result->__path__,
                     'score' => $result->__tntSearchScore__,
                 ];
             }),
@@ -196,6 +199,12 @@ class SearchController extends Controller
 
             // TODO: We may want to tune this depending on the type of search being performed.
             $maxPages = 10;
+
+            // We had an issue here where some queries were getting nonsense scores back from the index.
+            // The cause of this was hitting the "maxDocs" limit, which is counter per-keyword.
+            // Looks like any keywork with more than maxDocs hits is likely to introduce scoring issues due to being incomplete.
+            // Doesn't look like they're ever queried as a group of keywords, that's handled later by summing the scores.
+            // TODO: Part of the issue here appears to be a lack of stopword handling.
 
             $indexResults = $builder->take(($limit * 2 * $maxPages) + 1)->raw();
             $totalIndexResults = $indexResults['hits'];

@@ -217,7 +217,7 @@ return [
         ],
         'asYouType' => false,
         'searchBoolean' => env('TNTSEARCH_BOOLEAN', false),
-        'maxDocs' => env('TNTSEARCH_MAX_DOCS', 500),
+        'maxDocs' => env('TNTSEARCH_MAX_DOCS', 5000),
         'driver' => 'mysql',
         'engine' => \TeamTNT\TNTSearch\Engines\SqliteEngine::class,
         'stemmer' => \TeamTNT\TNTSearch\Stemmer\NoStemmer::class,

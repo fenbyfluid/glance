@@ -35,11 +35,11 @@
 
     <div class="grow overflow-y-auto rounded-t-lg">
         <div class="space-y-3 pointer-events-auto">
-            <template x-for="result in results" :key="result.path + '/' + result.name">
-                <a :href="'/' + result.path" class="p-2 sm:p-4 bg-white dark:bg-gray-800 shadow-sm rounded-lg flex gap-2 sm:gap-3 pointer-events-auto">
+            <template x-for="result in results" :key="result.link">
+                <a :href="result.link" class="p-2 sm:p-4 bg-white dark:bg-gray-800 shadow-sm rounded-lg flex gap-2 sm:gap-3 pointer-events-auto">
                     <div class="shrink-0 grow-0 overflow-hidden w-[160px] h-[90px] rounded-sm bg-black flex justify-center items-center">
                         <template x-if="result.thumbnail">
-                            <img loading="lazy" :src="`/_image/${result.thumbnail}.avif`" class="rounded-sm" />
+                            <img loading="lazy" :src="`/_image/${result.thumbnail}.avif`" class="max-w-full max-h-full" />
                         </template>
                         @foreach(\App\Media\MediaContentKind::cases() as $kind)
                             <template x-if="!result.thumbnail && result.kind == '{{ $kind->value }}'">
