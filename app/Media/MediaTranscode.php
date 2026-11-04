@@ -160,6 +160,8 @@ class MediaTranscode
             '-profile:v', 'high',
             '-forced-idr:v', '1',
             '-force_key_frames', $keyFrameExpression,
+            '-bf', '0',
+            '-fps_mode', 'cfr',
         ];
     }
 

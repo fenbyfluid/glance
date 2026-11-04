@@ -12,32 +12,21 @@ function logFancyboxState(label, current) {
     console.log(label, (current !== undefined) ? JSON.parse(JSON.stringify(current, (k, v) => (v && k.startsWith('$')) ? v.prop('outerHTML') : v)) : current);
 }
 
-async function startHlsVideo(element) {
+const HLS_MEDIA_MIME_TYPE = 'video/mp4; codecs="avc1.64001f, mp4a.40.2"';
+
+function getHlsStreamUrl(src) {
+    const url = new URL(src, window.location.href);
+
+    // TODO: Use a named route somehow, account for the base path.
+    url.pathname = '/_stream' + url.pathname + '.m3u8';
+
+    return url.href;
+}
+
+async function startHlsVideo(element, hlsUrl) {
     const { Hls } = await import('hls.js/light');
 
-    if (!Hls.isMSESupported()) {
-        return;
-    }
-
-    const hlsMimeTypePattern = /^application\/vnd\.apple\.mpegurl(?=;|$)/;
-
-    let hlsSource = null;
-    const sources = element.getElementsByTagName('source');
-    for (const source of sources) {
-        if (!source.type.match(hlsMimeTypePattern)) {
-            continue;
-        }
-
-        const mediaMimeType = source.type.replace(hlsMimeTypePattern, 'video/mp4');
-        if (!Hls.getMediaSource().isTypeSupported(mediaMimeType)) {
-            continue;
-        }
-
-        hlsSource = source;
-        break;
-    }
-
-    if (!hlsSource) {
+    if (!Hls.isMSESupported() || !Hls.getMediaSource().isTypeSupported(HLS_MEDIA_MIME_TYPE)) {
         return;
     }
 
@@ -72,7 +61,7 @@ async function startHlsVideo(element) {
         }
     });
 
-    hls.loadSource(hlsSource.src);
+    hls.loadSource(hlsUrl);
     hls.attachMedia(element);
 
     return hls;
@@ -133,16 +122,10 @@ $.fancybox.defaults = {
         logFancyboxState('beforeLoad', current);
 
         if (current.type === 'video') {
-            const src = new URL(current.src, window.location.href);
-
-            // TODO: Use a named route somehow, account for the base path.
-            src.pathname = '/_stream' + src.pathname + '.m3u8';
-
             const srcType = current.opts.$orig?.attr('data-mime');
 
             current.opts.video.tpl = current.opts.video.tpl
-                .replace('{{src_type}}', srcType ? `type="${srcType.replaceAll('"', '&quot;')}"` : '')
-                .replace('{{src_stream}}', src.href);
+                .replace('{{src_type}}', srcType ? `type="${srcType.replaceAll('"', '&quot;')}"` : '');
         }
     },
     afterLoad: function(instance, current) {
@@ -160,18 +143,52 @@ $.fancybox.defaults = {
         if (current.type === 'video') {
             const element = current.$slide.find('video').get(0);
 
-            // TODO: See if we need an error event listener if we're not in this state already.
-            if (element.networkState === 3) {
-                startHlsVideo(element).then(hls => {
+            let fallbackStarted = false;
+            let slideReset = false;
+            let hlsInstance = null;
+
+            const startFallback = function() {
+                if (fallbackStarted) {
+                    return;
+                }
+
+                fallbackStarted = true;
+
+                startHlsVideo(element, getHlsStreamUrl(current.src)).then(hls => {
                     if (!hls) {
                         return;
                     }
 
-                    current.$slide.on('onReset', function () {
-                        console.log('onReset');
+                    if (slideReset) {
                         hls.destroy();
-                    });
+                        return;
+                    }
+
+                    hlsInstance = hls;
                 });
+            };
+
+            // Source load failures fire `error` on the <source> element, which doesn't bubble, so capture it on the video.
+            // Once the last source has failed, networkState is NETWORK_NO_SOURCE.
+            const onSourceError = function() {
+                if (element.networkState === HTMLMediaElement.NETWORK_NO_SOURCE) {
+                    element.removeEventListener('error', onSourceError, true);
+                    startFallback();
+                }
+            };
+
+            current.$slide.on('onReset', function () {
+                console.log('onReset');
+                slideReset = true;
+                element.removeEventListener('error', onSourceError, true);
+                hlsInstance?.destroy();
+                hlsInstance = null;
+            });
+
+            if (element.networkState === HTMLMediaElement.NETWORK_NO_SOURCE) {
+                startFallback();
+            } else {
+                element.addEventListener('error', onSourceError, true);
             }
         }
     },
@@ -199,7 +216,6 @@ $.fancybox.defaults = {
       tpl:
         '<video class="fancybox-video" controls autoplay poster="{{poster}}">' +
         '  <source src="{{src}}" {{src_type}} />' +
-        '  <source src="{{src_stream}}" type="application/vnd.apple.mpegurl; codecs=&quot;avc1.64001f, mp4a.40.2&quot;" />' +
         '  <div style="height: 100%; color: white; display: flex; justify-content: center; align-items: center; text-align: center;"><span>Sorry, your browser doesn\'t support streaming this video, <br><a style="color: white; text-decoration: underline;" href="{{src}}" download>download</a> and watch with your favorite video player!</span></div>' +
         '</video>',
       format: '',
