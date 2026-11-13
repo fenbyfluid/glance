@@ -8,7 +8,7 @@ use App\Models\IndexedDirectory;
 readonly class DirectorySource
 {
     /**
-     * @param  array<string, bool>  $accessControlInfo
+     * @param  array<string|int, bool>  $accessControlInfo
      */
     public function __construct(private IndexedDirectory $directoryEntry, private array $accessControlInfo) {}
 

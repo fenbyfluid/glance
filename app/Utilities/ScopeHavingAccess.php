@@ -12,9 +12,9 @@ trait ScopeHavingAccess
         unset($accessControlInfo['']);
 
         if ($hasAccessToPath) {
-            $query->whereNotIn('name', array_keys(array_filter($accessControlInfo, fn ($access) => !$access)));
+            $query->whereNotIn('name', array_map(strval(...), array_keys(array_filter($accessControlInfo, fn ($access) => !$access))));
         } else {
-            $query->whereIn('name', array_keys(array_filter($accessControlInfo, fn ($access) => $access)));
+            $query->whereIn('name', array_map(strval(...), array_keys(array_filter($accessControlInfo, fn ($access) => $access))));
         }
     }
 }

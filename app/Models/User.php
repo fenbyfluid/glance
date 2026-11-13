@@ -72,7 +72,7 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
     }
 
     /**
-     * @return array<string, bool>
+     * @return array<string|int, bool>
      */
     public function getPathAccessInfo(string $path): array
     {
@@ -117,10 +117,7 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
             }
         }
 
-        return [
-            '' => $hasAccess,
-            ...$childAccessOverrides,
-        ];
+        return ['' => $hasAccess] + $childAccessOverrides;
     }
 
     public function getInviteUrl(): ?string
