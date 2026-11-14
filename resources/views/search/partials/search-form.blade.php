@@ -33,8 +33,13 @@
         </div>
     </div>
 
-    <div class="grow overflow-y-auto rounded-t-lg">
-        <div class="space-y-3 pointer-events-auto">
+    {{-- The scroller itself must be pointer-events-auto: WebKit's async scrolling ignores scroll containers with
+         pointer-events: none (inherited from the search modal wrapper), even when their children accept events,
+         so results became unscrollable in Safari (stuck after a few seconds on macOS, not at all on iOS). It's
+         sized to its content (min-h-0 lets it shrink to fit) rather than growing to fill the modal, so the empty
+         area below the results doesn't swallow clicks meant for the backdrop. --}}
+    <div class="min-h-0 overflow-y-auto overscroll-contain rounded-t-lg pointer-events-auto">
+        <div class="space-y-3">
             <template x-for="result in results" :key="result.link">
                 <a :href="result.link" class="p-2 sm:p-4 bg-white dark:bg-gray-800 shadow-sm rounded-lg flex gap-2 sm:gap-3 pointer-events-auto">
                     <div class="shrink-0 grow-0 overflow-hidden w-[160px] h-[90px] rounded-sm bg-black flex justify-center items-center">
