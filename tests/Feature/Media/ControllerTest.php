@@ -67,6 +67,14 @@ class ControllerTest extends TestCase
         $response->assertOk();
     }
 
+    public function test_media_url_encodes_directory_path_once(): void
+    {
+        $this->assertSame(
+            '/Sample%20Directory%20-%20123%20%28Test%20Copy%29/',
+            media_url('Sample Directory - 123 (Test Copy)/'),
+        );
+    }
+
     public function test_media_index_with_invalid_subpath(): void
     {
         $user = User::factory()->create();
