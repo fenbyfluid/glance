@@ -5,6 +5,8 @@ namespace Tests\Feature\Media;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Process;
+use Jcupitt\Vips\Image;
 use Tests\TestCase;
 
 class ControllerTest extends TestCase
@@ -73,6 +75,33 @@ class ControllerTest extends TestCase
             '/Sample%20Directory%20-%20123%20%28Test%20Copy%29/',
             media_url('Sample Directory - 123 (Test Copy)/'),
         );
+    }
+
+    public function test_ocr_debug_response_negotiates_html_and_png(): void
+    {
+        $imagePath = tempnam(sys_get_temp_dir(), 'ocr-debug-');
+
+        try {
+            file_put_contents($imagePath, Image::black(100, 100)->newFromImage([0, 0, 0])->pngsave_buffer());
+            config(['media.path' => dirname($imagePath)]);
+            Process::preventStrayProcesses();
+            Process::fake(fn () => "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n4\t1\t1\t1\t1\t0\t10\t10\t60\t20\t-1\t\n5\t1\t1\t1\t1\t1\t10\t10\t60\t20\t99\tHello\n");
+
+            $this->actingAs(User::factory()->create(['is_admin' => true]));
+            $url = media_url(basename($imagePath)).'?_debug_ocr=1';
+
+            $image = $this->get($url, ['Accept' => 'image/avif,image/webp,image/*,*/*;q=0.8']);
+            $image->assertOk()->assertHeader('Content-Type', 'image/png')->assertHeader('Vary', 'Accept');
+            $this->assertSame('image/png', getimagesizefromstring($image->getContent())['mime']);
+
+            foreach (['text/html,application/xhtml+xml,image/webp,*/*;q=0.8', '*/*'] as $accept) {
+                $html = $this->get($url, ['Accept' => $accept]);
+                $html->assertOk()->assertHeader('Vary', 'Accept');
+                $html->assertSee('data:image/png;base64,', false)->assertSee('alt="Hello"', false);
+            }
+        } finally {
+            unlink($imagePath);
+        }
     }
 
     public function test_media_index_with_invalid_subpath(): void

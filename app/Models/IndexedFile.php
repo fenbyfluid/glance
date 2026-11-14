@@ -21,6 +21,10 @@ class IndexedFile extends Model
 {
     use ScopeHavingAccess, Searchable, SoftDeletes;
 
+    protected $attributes = [
+        'extracted_text_status' => ExtractedTextStatus::Pending->value,
+    ];
+
     protected $fillable = [
         'directory_id',
         'name',

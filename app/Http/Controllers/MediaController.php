@@ -48,7 +48,7 @@ class MediaController extends Controller
             $this->ensurePathCanonical($request, false);
 
             if ($request->query->has('_debug_ocr') && $user->can('admin')) {
-                return $this->debugImageTextExtraction($filesystemPath);
+                return $this->debugImageTextExtraction($request, $filesystemPath);
             }
 
             config(['clockwork.enable' => false]);
@@ -314,7 +314,7 @@ class MediaController extends Controller
         return null;
     }
 
-    private function debugImageTextExtraction(string $path)
+    private function debugImageTextExtraction(Request $request, string $path): Response
     {
         ini_set('max_execution_time', 0);
 
@@ -334,24 +334,31 @@ class MediaController extends Controller
             }
         } while ($imageExtractionState !== null);
 
+        $imageData = app('clockwork')->event('Visualize Text Boxes')->run(function () use ($path, $spans) {
+            $image = \App\Jobs\ExtractTextJob::visualizeTextBoxes($path, $spans);
+
+            return $image->pngsave_buffer();
+        });
+
+        if ($request->prefers(['text/html', 'image/png']) === 'image/png') {
+            config(['clockwork.enable' => false]);
+
+            return response($imageData, 200, ['Content-Type' => 'image/png', 'Vary' => 'Accept'])->setPrivate();
+        }
+
         $altText = app('clockwork')->event('Extract Text From Boxes')->run(function () use ($spans) {
             $text = \App\Jobs\ExtractTextJob::extractTextFromBoxes($spans);
 
             return htmlspecialchars($text, ENT_QUOTES | ENT_HTML5);
         });
 
-        $imageUrl = app('clockwork')->event('Visualize Text Boxes')->run(function () use ($path, $spans) {
-            $image = \App\Jobs\ExtractTextJob::visualizeTextBoxes($path, $spans);
-            $imageUrl = 'data:image/png;base64,'.base64_encode($image->pngsave_buffer());
-
-            return htmlspecialchars($imageUrl, ENT_QUOTES | ENT_HTML5);
-        });
+        $imageUrl = 'data:image/png;base64,'.base64_encode($imageData);
 
         return response(<<<EOT
             <!DOCTYPE html>
             <html lang="en">
             <body>
             <img src="$imageUrl" alt="$altText" title="$altText" style="max-width:100%; height: auto;">
-        EOT);
+        EOT, 200, ['Vary' => 'Accept'])->setPrivate();
     }
 }

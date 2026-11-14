@@ -31,6 +31,11 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use Authenticatable, Authorizable, HasFactory, Notifiable;
 
+    protected $attributes = [
+        'note' => '',
+        'is_admin' => false,
+    ];
+
     /**
      * The attributes that are mass assignable.
      *

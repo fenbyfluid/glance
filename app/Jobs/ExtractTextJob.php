@@ -260,18 +260,14 @@ class ExtractTextJob implements ShouldQueue
             $image = $image->autorot();
         }
 
-        // Calculate a reasonable per-tile height to process
-        $tileHeight = max(1000, (int) floor(2_500_000 / $image->width));
-        $needsTiling = $tileHeight < $image->height;
         $tileOffset = $imageExtractionState['offset'] ?? 0;
+        $tile = self::imageTile($image->height, $tileOffset);
 
-        if ($needsTiling) {
-            $remainingHeight = $image->height - $tileOffset;
-            $isLastTile = $remainingHeight < ($tileHeight * 1.5);
-            $image = $image->crop(0, $tileOffset, $image->width, $isLastTile ? $remainingHeight : $tileHeight);
+        if ($tile['needsTiling']) {
+            $image = $image->crop(0, $tileOffset, $image->width, $tile['height']);
         }
 
-        $readImageFromStdin = $wasRotated || $needsTiling;
+        $readImageFromStdin = $wasRotated || $tile['needsTiling'];
 
         $temporaryFile = null;
         $imageInput = $readImageFromStdin ? 'stdin' : $imagePath;
@@ -314,11 +310,11 @@ class ExtractTextJob implements ShouldQueue
         $lines = self::extractTextLinesFromTile($imageInput, $temporaryFile);
 
         if ($imageExtractionState) {
-            $lines = self::mergeTileLines($imageExtractionState['boxes'], $lines, $tileOffset, floor($tileHeight * 0.1));
+            $lines = self::mergeTileLines($imageExtractionState['boxes'], $lines, $tileOffset, floor($tile['nominalHeight'] * 0.1));
         }
 
-        if ($needsTiling && !$isLastTile) {
-            throw new ImageExtractionIncompleteException($tileOffset + floor($tileHeight * 0.9), $lines);
+        if ($tile['hasNext']) {
+            throw new ImageExtractionIncompleteException($tileOffset + floor($tile['nominalHeight'] * 0.9), $lines);
         }
 
         // Merge overlapping lines to produce paragraphs.
@@ -371,10 +367,24 @@ class ExtractTextJob implements ShouldQueue
      */
     public static function visualizeTextBoxes(string $imagePath, array $boxes): Vips\Image
     {
-        $image = Vips\Image::newFromFile($imagePath)->extract_band(0, ['n' => 3]);
+        $image = Vips\Image::newFromFile($imagePath)->autorot()->extract_band(0, ['n' => 3]);
 
         // Visualize the computation.
         foreach ($boxes as $paragraph) {
+            // The text bounds may extend beyond the image.
+            $bounds = self::intersectBox($paragraph, [
+                'left' => 0,
+                'top' => 0,
+                'width' => $image->width,
+                'height' => $image->height,
+            ]);
+
+            if ($bounds === null) {
+                continue;
+            }
+
+            $paragraph = array_replace($paragraph, $bounds);
+
             $paragraphImage = $image->extract_area(
                 $paragraph['left'],
                 $paragraph['top'],
@@ -383,6 +393,14 @@ class ExtractTextJob implements ShouldQueue
             );
 
             foreach ($paragraph['lines'] as $line) {
+                $bounds = self::intersectBox($line, $paragraph);
+
+                if ($bounds === null) {
+                    continue;
+                }
+
+                $line = array_replace($line, $bounds);
+
                 $lineImage = $paragraphImage->extract_area(
                     $line['left'] - $paragraph['left'],
                     $line['top'] - $paragraph['top'],
@@ -453,7 +471,51 @@ class ExtractTextJob implements ShouldQueue
             $image = $image->insert($paragraphImage, $paragraph['left'], $paragraph['top']);
         }
 
+        $tileOffset = 0;
+        do {
+            $tile = self::imageTile($image->height, $tileOffset);
+            $image = $image->draw_rect([255, 165, 0], 0, $tileOffset, $image->width, $tile['height']);
+            $tileOffset += (int) floor($tile['nominalHeight'] * 0.9);
+        } while ($tile['hasNext']);
+
         return $image;
+    }
+
+    /**
+     * @return array{nominalHeight: int, height: int, needsTiling: bool, hasNext: bool}
+     */
+    private static function imageTile(int $height, int $offset): array
+    {
+        $tileHeight = 800;
+        $needsTiling = $tileHeight < $height;
+        $remainingHeight = $height - $offset;
+        $hasNext = $remainingHeight > $tileHeight;
+
+        return [
+            'nominalHeight' => $tileHeight,
+            'height' => $hasNext ? $tileHeight : $remainingHeight,
+            'needsTiling' => $needsTiling,
+            'hasNext' => $hasNext,
+        ];
+    }
+
+    private static function intersectBox(array $box, array $bounds): ?array
+    {
+        $left = max($box['left'], $bounds['left']);
+        $top = max($box['top'], $bounds['top']);
+        $right = min($box['left'] + $box['width'], $bounds['left'] + $bounds['width']);
+        $bottom = min($box['top'] + $box['height'], $bounds['top'] + $bounds['height']);
+
+        if ($right <= $left || $bottom <= $top) {
+            return null;
+        }
+
+        return [
+            'left' => $left,
+            'top' => $top,
+            'width' => $right - $left,
+            'height' => $bottom - $top,
+        ];
     }
 
     private static function mergeTileLines(array $existingLines, array $newLines, int $newTileOffset, int $tileOverlap)
@@ -679,7 +741,11 @@ class ExtractTextJob implements ShouldQueue
             }
 
             // TODO: Support multiple languages.
-            $dictionary = enchant_broker_request_dict($broker, 'en');
+            $availableLanguages = array_map(fn ($dict) => $dict['lang_tag'], enchant_broker_list_dicts($broker));
+            $desiredLanguages = ['en_US', 'en_GB', 'en'];
+            $languageTag = implode(',', array_intersect($desiredLanguages, $availableLanguages));
+
+            $dictionary = enchant_broker_request_dict($broker, $languageTag);
             if (!$dictionary) {
                 throw new \Exception('Enchantment dictionary initialization failed');
             }
