@@ -12,7 +12,7 @@
                     @csrf
 
                     <div class="grid grid-flow-row gap-x-4 divide-y *:py-2 mt-12" style="grid-template-columns: 1fr repeat({{ 2 + count($users) }}, min-content);">
-                        <div class="col-span-full grid grid-cols-subgrid grid-flow-col items-center border-gray-200">
+                        <div class="col-span-full grid grid-cols-subgrid grid-flow-col items-center border-gray-200 dark:border-gray-700">
                             <div></div>
                             @foreach($users as $user)
                                 <div class="relative">
@@ -21,7 +21,7 @@
                             @endforeach
                         </div>
                         @foreach($entries as $entry)
-                            <div class="col-span-full grid grid-cols-subgrid grid-flow-col items-center border-gray-200">
+                            <div class="col-span-full grid grid-cols-subgrid grid-flow-col items-center border-gray-200 dark:border-gray-700">
                                 <div class="px-3">/{{ $entry->path }}</div>
                                 @foreach($users as $user)
                                     <x-checkbox-input
@@ -42,7 +42,7 @@
                             </div>
                         @endforeach
                         {{-- TODO: It would be nice to use Alpine to create an additional new row the first time the text input is typed into --}}
-                        <div class="col-span-full grid grid-cols-subgrid grid-flow-col items-center border-gray-200">
+                        <div class="col-span-full grid grid-cols-subgrid grid-flow-col items-center border-gray-200 dark:border-gray-700">
                             <x-text-input id="path_new" name="path_new" type="text" class="block w-full" :value="transform(old('path_new', ''), fn($s) => '/'.$s)" autocomplete="off" />
                             @foreach($users as $user)
                                 <x-checkbox-input

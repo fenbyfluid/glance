@@ -7,7 +7,7 @@
         <div class="space-x-8 ms-4 sm:ms-10 flex grow">
             <ol class="grow flex items-center whitespace-nowrap">
                 <a href="{{ media_url($path.'/../') }}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="shrink-0 size-4 text-gray-400 dark:text-grey-600" aria-label="Parent Directory" >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="shrink-0 size-4 text-gray-400 dark:text-gray-600" aria-label="Parent Directory" >
                         <path fill-rule="evenodd" d="M14 13.25a.75.75 0 0 0-.75-.75h-6.5V4.56l.97.97a.75.75 0 0 0 1.06-1.06L6.53 2.22a.75.75 0 0 0-1.06 0L3.22 4.47a.75.75 0 0 0 1.06 1.06l.97-.97v8.69c0 .414.336.75.75.75h7.25a.75.75 0 0 0 .75-.75Z" clip-rule="evenodd" />
                     </svg>
                 </a>
@@ -16,7 +16,7 @@
                         <li class="hidden sm:inline-flex items-center">
                             <a href="{{ $crumb->path }}" class="flex items-center text-md font-normal leading-5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 focus:outline-hidden focus:text-gray-700 dark:focus:text-gray-300">
                                 {{ $crumb->label }}
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="shrink-0 size-5 text-gray-400 dark:text-grey-600">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="shrink-0 size-5 text-gray-400 dark:text-gray-600">
                                     <path fill-rule="evenodd" d="M10.074 2.047a.75.75 0 0 1 .449.961L6.705 13.507a.75.75 0 0 1-1.41-.513L9.113 2.496a.75.75 0 0 1 .961-.449Z" clip-rule="evenodd" />
                                 </svg>
                             </a>
@@ -81,7 +81,7 @@
                             {{ $content->label }}
                             @if($content->kind === \App\Media\MediaContentKind::Directory)
                                 {{-- TODO: De-dupe these icons (this is the slash from above) --}}
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="inline align-text-top size-5 text-gray-400 dark:text-grey-600">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="inline align-text-top size-5 text-gray-400 dark:text-gray-600">
                                     <path fill-rule="evenodd" d="M10.074 2.047a.75.75 0 0 1 .449.961L6.705 13.507a.75.75 0 0 1-1.41-.513L9.113 2.496a.75.75 0 0 1 .961-.449Z" clip-rule="evenodd" />
                                 </svg>
                             @endif

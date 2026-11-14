@@ -10,7 +10,7 @@
             <div class="p-4 sm:p-8 bg-white dark:bg-gray-800 shadow-sm sm:rounded-lg">
                 <div class="divide-y *:py-2 -my-2">
                     @foreach($users as $user)
-                        <div class="flex items-center gap-3 border-gray-200">
+                        <div class="flex items-center gap-3 border-gray-200 dark:border-gray-700">
                             <div class="flex-1">{{ $user->note }}</div>
                             @empty($user->username)
                                 <div>{{ __('Pending') }}</div>
