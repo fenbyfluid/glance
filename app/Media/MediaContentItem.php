@@ -20,6 +20,7 @@ class MediaContentItem
 
     public function __construct(
         public readonly string $path,
+        public readonly int $mtime,
         public readonly ?string $mimeType = null,
         public readonly ?string $thumbnail = null,
         public readonly ?string $filmstrip = null,

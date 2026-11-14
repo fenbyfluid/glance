@@ -20,7 +20,13 @@ readonly class DirectorySource
         $contents = [];
 
         foreach ($childDirectoryEntries as $childDirectoryEntry) {
-            $contents[] = new MediaContentItem($childDirectoryEntry->name.'/', null, null, null);
+            $contents[] = new MediaContentItem(
+                $childDirectoryEntry->name.'/',
+                $childDirectoryEntry->mtime,
+                null,
+                null,
+                null,
+            );
         }
 
         foreach ($childFileEntries as $childFileEntry) {
@@ -35,6 +41,7 @@ readonly class DirectorySource
 
             $contents[] = new MediaContentItem(
                 $childFileEntry->name,
+                $childFileEntry->mtime,
                 $childFileEntry->mime_type,
                 $childFileEntry->thumbnail,
                 $childFileEntry->filmstrip,
