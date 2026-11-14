@@ -20,7 +20,8 @@ class InviteTest extends TestCase
         $inviteUrl = URL::temporarySignedRoute(
             'invite.link',
             now()->addMinutes(60),
-            ['user' => $user]);
+            ['user' => $user],
+            absolute: false);
 
         $response = $this->get($inviteUrl);
 
@@ -36,7 +37,8 @@ class InviteTest extends TestCase
         $inviteUrl = URL::temporarySignedRoute(
             'invite.link',
             now()->addMinutes(60),
-            ['user' => $user]);
+            ['user' => $user],
+            absolute: false);
 
         $response = $this->get($inviteUrl);
 

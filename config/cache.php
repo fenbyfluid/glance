@@ -49,7 +49,7 @@ return [
         'file' => [
             'driver' => 'file',
             'path' => storage_path('framework/cache/data'),
-            'lock_path' => storage_path('framework/cache/data'),
+            'lock_path' => storage_path('framework/cache/locks'),
         ],
 
         'memcached' => [
@@ -90,6 +90,10 @@ return [
             'driver' => 'octane',
         ],
 
+        'apc' => [
+            'driver' => 'apc',
+        ],
+
     ],
 
     /*
@@ -104,5 +108,8 @@ return [
     */
 
     'prefix' => env('CACHE_PREFIX', Str::slug(env('APP_NAME', 'laravel'), '_').'_cache_'),
+
+    // TODO: Restrict cached classes after Deferred stops storing arbitrary exceptions.
+    'serializable_classes' => null,
 
 ];

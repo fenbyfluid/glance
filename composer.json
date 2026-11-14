@@ -13,11 +13,11 @@
         "ext-zlib": "*",
         "itsgoingd/clockwork": "^5.3",
         "jcupitt/vips": "^2.5",
-        "laravel/framework": "^12.7",
+        "laravel/framework": "^13.0",
         "laravel/horizon": "^5.32",
-        "laravel/scout": "^10.19",
-        "laravel/tinker": "^2.9",
-        "teamtnt/laravel-scout-tntsearch-driver": "dev-master"
+        "laravel/scout": "^11.0",
+        "laravel/tinker": "^3.1",
+        "teamtnt/laravel-scout-tntsearch-driver": "^16.2.0"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
@@ -26,14 +26,8 @@
         "laravel/sail": "^1.26",
         "mockery/mockery": "^1.6",
         "nunomaduro/collision": "^8.1",
-        "phpunit/phpunit": "^12.0"
+        "phpunit/phpunit": "^13.0"
     },
-    "repositories": [
-        {
-            "type": "vcs",
-            "url": "https://github.com/fenbyfluid/laravel-scout-tntsearch-driver.git"
-        }
-    ],
     "autoload": {
         "files": [
             "app/helpers.php"

@@ -253,6 +253,7 @@ return [
         // List of queue jobs that should be collected, any other queue job will not be collected if not empty
         'only' => [
             // App\Jobs\BuggyJob::class
+            // \Laravel\Scout\Jobs\MakeSearchable::class,
         ],
     ],
 
