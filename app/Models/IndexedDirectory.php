@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Laravel\Scout\Searchable;
-use TeamTNT\TNTSearch\Support\NGramTokenizer;
+use TeamTNT\TNTSearch\Tokenizer\NGramTokenizer;
 
 class IndexedDirectory extends Model
 {

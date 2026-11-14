@@ -16,7 +16,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Laravel\Scout;
-use TeamTNT\TNTSearch\Support\NGramTokenizer;
+use TeamTNT\TNTSearch\Tokenizer\NGramTokenizer;
 
 class SearchController extends Controller
 {

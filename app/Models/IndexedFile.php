@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Laravel\Scout\Searchable;
-use TeamTNT\TNTSearch\Support\NGramTokenizer;
+use TeamTNT\TNTSearch\Tokenizer\NGramTokenizer;
 
 class IndexedFile extends Model
 {

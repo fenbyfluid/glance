@@ -221,7 +221,7 @@ return [
         'driver' => 'mysql',
         'engine' => \TeamTNT\TNTSearch\Engines\SqliteEngine::class,
         'stemmer' => \TeamTNT\TNTSearch\Stemmer\NoStemmer::class,
-        'tokenizer' => \TeamTNT\TNTSearch\Support\Tokenizer::class,
+        'tokenizer' => \TeamTNT\TNTSearch\Tokenizer\Tokenizer::class,
         // 'stemmer' => \TeamTNT\TNTSearch\Stemmer\PorterStemmer::class,
     ],
 ];
