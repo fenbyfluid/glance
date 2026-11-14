@@ -165,14 +165,14 @@ class IndexedFile extends Model
             if ($file->isDirty('thumbnail')) {
                 $originalThumbnail = $file->getOriginal('thumbnail');
                 if ($originalThumbnail !== null) {
-                    unlink(Path::makeThumbnailPath($originalThumbnail));
+                    self::deleteThumbnail($originalThumbnail);
                 }
             }
 
             if ($file->isDirty('filmstrip')) {
                 $originalFilmstrip = $file->getOriginal('filmstrip');
                 if ($originalFilmstrip !== null) {
-                    unlink(Path::makeThumbnailPath($originalFilmstrip));
+                    self::deleteThumbnail($originalFilmstrip);
                 }
             }
         });
@@ -193,11 +193,11 @@ class IndexedFile extends Model
             }
 
             if ($file->thumbnail) {
-                unlink(Path::makeThumbnailPath($file->thumbnail));
+                self::deleteThumbnail($file->thumbnail);
             }
 
             if ($file->filmstrip) {
-                unlink(Path::makeThumbnailPath($file->filmstrip));
+                self::deleteThumbnail($file->filmstrip);
             }
         });
 
@@ -208,5 +208,22 @@ class IndexedFile extends Model
                 $extractedTextChunk->restore();
             }
         });
+    }
+
+    private static function deleteThumbnail(string $id): void
+    {
+        $path = Path::makeThumbnailPath($id);
+
+        try {
+            if (!unlink($path)) {
+                throw new \RuntimeException('Unable to delete thumbnail '.$path);
+            }
+        } catch (\ErrorException $exception) {
+            // PHP does not expose unlink's errno, so only suppress the exact ENOENT warning.
+            $notFound = function_exists('posix_strerror') ? posix_strerror(2) : 'No such file or directory';
+            if ($exception->getMessage() !== 'unlink('.$path.'): '.$notFound) {
+                throw $exception;
+            }
+        }
     }
 }
