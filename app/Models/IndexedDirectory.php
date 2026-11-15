@@ -30,7 +30,7 @@ class IndexedDirectory extends Model
 
     public function searchIndexShouldBeUpdated(): bool
     {
-        return $this->wasChanged('name') || !$this->shouldBeSearchable();
+        return $this->wasRecentlyCreated || $this->wasChanged('name') || !$this->shouldBeSearchable();
     }
 
     public function toSearchableArray(): array

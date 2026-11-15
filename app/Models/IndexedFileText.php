@@ -26,7 +26,7 @@ class IndexedFileText extends Model
 
     public function searchIndexShouldBeUpdated(): bool
     {
-        return $this->wasChanged('text');
+        return $this->wasRecentlyCreated || $this->wasChanged('text');
     }
 
     public function toSearchableArray(): array
