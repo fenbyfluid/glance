@@ -9,6 +9,7 @@ use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Attributes\WithoutRelations;
+use Illuminate\Queue\CallQueuedClosure;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Jcupitt\Vips;
@@ -72,10 +73,10 @@ class GenerateMediaFileThumbnailJob implements ShouldQueue
         $this->appendToChain((new CaptureFrameJob($path, $frameTime, 320, 180, $imagePath))->onQueue('ffmpeg-capture'));
 
         $outputObject = $this->outputObject;
-        $this->appendToChain(static function () use ($imageId, $outputObject) {
+        $this->appendToChain(CallQueuedClosure::create(static function () use ($imageId, $outputObject) {
             $outputObject->update([
                 'thumbnail' => $imageId,
             ]);
-        })->onQueue('generation-hash');
+        })->onQueue('generation-hash'));
     }
 }

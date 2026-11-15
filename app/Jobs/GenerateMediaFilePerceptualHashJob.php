@@ -62,7 +62,7 @@ class GenerateMediaFilePerceptualHashJob implements ShouldQueue
                 $jobs = self::prepareJobsForVideoFile($this->outputObject, $path, $durationMs);
                 break;
             default:
-                throw new \LogicException('Unsupported kind: '.$kind);
+                throw new \LogicException('Unsupported kind: '.$kind->name);
         }
 
         // We append all the jobs to the current chain for the benefit of our app:hash command using sync.

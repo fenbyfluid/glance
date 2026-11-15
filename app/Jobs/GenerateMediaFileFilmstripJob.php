@@ -9,6 +9,7 @@ use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Attributes\WithoutRelations;
+use Illuminate\Queue\CallQueuedClosure;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Str;
 
@@ -69,10 +70,10 @@ class GenerateMediaFileFilmstripJob implements ShouldQueue
         $this->appendToChain((new TileImagesJob($frameImages, $gridSize, $imagePath))->ignoreMissingImages()->onQueue('generation-tile'));
 
         $outputObject = $this->outputObject;
-        $this->appendToChain(static function () use ($imageId, $outputObject) {
+        $this->appendToChain(CallQueuedClosure::create(static function () use ($imageId, $outputObject) {
             $outputObject->update([
                 'filmstrip' => $imageId,
             ]);
-        })->onQueue('generation-hash');
+        })->onQueue('generation-hash'));
     }
 }

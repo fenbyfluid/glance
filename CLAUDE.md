@@ -84,6 +84,8 @@ php artisan app:hash [-T] [-m method...] [-r reference] [path...] # compute osha
   `MediaInfo` cast), `GenerateMediaFileThumbnailJob`, `GenerateMediaFileFilmstripJob`,
   `GenerateMediaFilePerceptualHashJob` (Stash-compatible phash via `VideoPerceptualHasher`), `ExtractTextJob`.
   Under a `sync` batch (CLI) generation runs inline.
+- `appendToChain()` returns the *current* job, so queue closures with `CallQueuedClosure::create(...)->onQueue()`;
+  chaining `->onQueue()` after it silently sends them to `default`.
 - Queues (see `config/horizon.php`): `default` on `redis_blocking`; `index`, `ffprobe`, `generation-hash`,
   `generation-tile`, `ffmpeg-capture`, `ffmpeg-wait` on `redis`, priority order, `tries=1`, `timeout=60`.
   `WaitForFrameCaptureSlot` works around Horizon draining low-priority queues ahead of newly-fed high ones.
