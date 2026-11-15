@@ -9,6 +9,9 @@ use App\Models\IndexedDirectory;
 use App\Models\IndexedFile;
 use App\Models\IndexedFileText;
 use App\Models\User;
+use App\Search\DocumentFilter;
+use App\Search\FilterableSqliteEngine;
+use App\Search\SearchScope;
 use App\Utilities\Path;
 use Illuminate\Database\Eloquent;
 use Illuminate\Http\Request;
@@ -20,6 +23,14 @@ use TeamTNT\TNTSearch\Tokenizer\NGramTokenizer;
 
 class SearchController extends Controller
 {
+    /** @var \WeakMap<SearchScope, array<int, string>> */
+    private \WeakMap $allowedDirectories;
+
+    public function __construct()
+    {
+        $this->allowedDirectories = new \WeakMap;
+    }
+
     public function index()
     {
         return view('search.index');
@@ -37,19 +48,22 @@ class SearchController extends Controller
         // If the directory type is in the requested kinds, add the directory index.
         if (in_array(MediaContentKind::Directory->value, $includeKinds, true)) {
             $queries[] = [
-                IndexedDirectory::search($queryTrigrams)->query(function (Eloquent\Builder $query) use ($pathPrefix) {
-                    if ($pathPrefix !== null) {
-                        // Escape special characters for LIKE pattern matching.
-                        $escapedPath = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $pathPrefix);
-
-                        $query->whereLike('path', $escapedPath.'/%');
-                    }
-                }),
-                function (IndexedDirectory $result) {
+                'builder' => IndexedDirectory::search($queryTrigrams),
+                'path' => function (IndexedDirectory $result) {
                     // Give directories a score boost, as they're much rarer.
                     $result->setAttribute('__tntSearchScore__', $result->__tntSearchScore__ * 1.5);
 
                     return $result->path;
+                },
+                'filter' => function (SearchScope $scope) use ($pathPrefix) {
+                    if ($scope->isUnrestricted()) {
+                        return null;
+                    }
+
+                    // Directories are their own documents. Searching within a directory shouldn't find the directory.
+                    $directoryIds = array_keys(array_filter($this->getAllowedDirectories($scope), fn ($path) => strval($path) !== $pathPrefix));
+
+                    return new DocumentFilter(documentIds: $directoryIds);
                 },
             ];
         }
@@ -57,15 +71,14 @@ class SearchController extends Controller
         // If anything other than the directory type is requested, add the file index.
         if (count($includeKinds) !== 1 || $includeKinds[0] !== MediaContentKind::Directory->value) {
             $queries[] = [
-                IndexedFile::search($queryTrigrams)->query(function (Eloquent\Builder $builder) use ($includeKinds) {
+                'builder' => IndexedFile::search($queryTrigrams)->query(function (Eloquent\Builder $builder) use ($includeKinds) {
                     $builder->whereIn('kind', $includeKinds)->with('directory');
                 }),
-                function (IndexedFile $result) {
+                'path' => function (IndexedFile $result) {
                     return $result->directory->path.'/'.$result->name;
                 },
-                function (IndexedFile $result) use ($pathPrefix) {
-                    // TODO: If we do this a lot, add a materialised path to IndexedFile
-                    return $pathPrefix === null || str_starts_with($result->__path__, $pathPrefix);
+                'filter' => function (SearchScope $scope) use ($includeKinds) {
+                    return $this->makeFileFilter($scope, $includeKinds);
                 },
             ];
         }
@@ -75,8 +88,8 @@ class SearchController extends Controller
             $searchOverheated = true;
         });
 
-        $results = app('clockwork')->event('Filename Search')->run(function () use ($request, $queries) {
-            return $this->performSearchWithAccessControl($request, $queries, 20);
+        $results = app('clockwork')->event('Filename Search')->run(function () use ($request, $queries, $pathPrefix) {
+            return $this->performSearchWithAccessControl($request, $queries, $pathPrefix, 20);
         });
 
         return [
@@ -115,20 +128,19 @@ class SearchController extends Controller
 
             return $this->performSearchWithAccessControl($request, [
                 [
-                    IndexedFileText::search($query)->query(function (Eloquent\Builder $builder) use ($includeKinds) {
+                    'builder' => IndexedFileText::search($query)->query(function (Eloquent\Builder $builder) use ($includeKinds) {
                         $builder->whereHas('file', function (Eloquent\Builder $builder) use ($includeKinds) {
                             $builder->whereIn('kind', $includeKinds);
                         })->with('file', 'file.directory');
                     }),
-                    function (IndexedFileText $result) {
+                    'path' => function (IndexedFileText $result) {
                         return $result->file->directory->path.'/'.$result->file->name;
                     },
-                    function (IndexedFileText $result) use ($pathPrefix) {
-                        // TODO: As above, if we do this a lot, add a materialised path to IndexedFile
-                        return $pathPrefix === null || str_starts_with($result->__path__, $pathPrefix);
+                    'filter' => function (SearchScope $scope) use ($includeKinds) {
+                        return $this->makeFileFilter($scope, $includeKinds);
                     },
                 ],
-            ], 20);
+            ], $pathPrefix, 20);
         });
 
         $highlighter = new \TeamTNT\TNTSearch\Support\Highlighter;
@@ -166,14 +178,66 @@ class SearchController extends Controller
         }
 
         $pathPrefix = Path::resolve($request->query('path'));
+        if ($pathPrefix === '') {
+            // The root, so no restriction.
+            $pathPrefix = null;
+        }
 
         return [$includeKinds, $pathPrefix];
     }
 
     /**
-     * @param  list<array{Scout\Builder, callable(Eloquent\Model $model): string, callable(Eloquent\Model $model): bool}>  $queries
+     * IDs and paths of the directories in scope, shared by the searches in a request.
+     *
+     * @return array<int, string>
      */
-    private function performSearchWithAccessControl(Request $request, array $queries, int $limit): Collection
+    private function getAllowedDirectories(SearchScope $scope): array
+    {
+        if (!isset($this->allowedDirectories[$scope])) {
+            $this->allowedDirectories[$scope] = app('clockwork')->event('Search Scope (directories)')->run(function () use ($scope) {
+                $query = IndexedDirectory::query();
+                $scope->applyToDirectories($query, 'indexed_directories.path');
+
+                // toBase(), as Eloquent's pluck() hydrates a model per row for cast columns, including the key.
+                return $query->toBase()->pluck('indexed_directories.path', 'indexed_directories.id')->all();
+            });
+        }
+
+        return $this->allowedDirectories[$scope];
+    }
+
+    /**
+     * Build the index filter for a search over documents stored with their file's directory and kind.
+     *
+     * Files are in scope if their directory is, as access control rules are only expected to target directories.
+     *
+     * @param  list<string>  $includeKinds
+     */
+    private function makeFileFilter(SearchScope $scope, array $includeKinds): ?DocumentFilter
+    {
+        $kinds = (count($includeKinds) === count(MediaContentKind::cases())) ? null : $includeKinds;
+
+        if ($scope->isUnrestricted()) {
+            return ($kinds === null) ? null : new DocumentFilter(kinds: $kinds);
+        }
+
+        return new DocumentFilter(
+            directoryIds: array_keys($this->getAllowedDirectories($scope)),
+            kinds: $kinds,
+        );
+    }
+
+    /**
+     * Each query provides:
+     * - builder: the Scout search.
+     * - path: maps a result model to its media path.
+     * - filter: given the search scope (access control + path filter), returns the filter to apply inside the index
+     *           (see FilterableSqliteEngine), or null for none. This keeps results the user can't see, or that are
+     *           outside the path filter, from crowding out the ones they can and overheating the search.
+     *
+     * @param  list<array{builder: Scout\Builder, path: callable(Eloquent\Model $model): string, filter: callable(SearchScope $scope): ?DocumentFilter}>  $queries
+     */
+    private function performSearchWithAccessControl(Request $request, array $queries, ?string $pathPrefix, int $limit): Collection
     {
         $user = $request->user();
         $accessControlOverrideUser = User::getAccessControlOverrideUser($request);
@@ -185,8 +249,14 @@ class SearchController extends Controller
             },
         ])->get()->reverse();
 
-        $perQueryResultGenerators = array_map(function ($query) use ($limit, $accessControlUser) {
-            [$builder, $mapModelToPath] = $query;
+        $scope = SearchScope::fromAccessControlEntries($accessControlEntries, $pathPrefix);
+        if ($scope->isEmpty()) {
+            return new Collection;
+        }
+
+        $perQueryResultGenerators = array_map(function ($query) use ($limit, $accessControlUser, $scope) {
+            $builder = $query['builder'];
+            $mapModelToPath = $query['path'];
 
             // This is effectively the TNTSearchEngine::paginate implementation, but with only one index search performed,
             // and without the inefficient self-join query it does to discard results when query constraints are applied.
@@ -206,7 +276,34 @@ class SearchController extends Controller
             // Doesn't look like they're ever queried as a group of keywords, that's handled later by summing the scores.
             // TODO: Part of the issue here appears to be a lack of stopword handling.
 
-            $indexResults = $builder->take(($limit * 2 * $maxPages) + 1)->raw();
+            $filter = app('clockwork')->event('Search Filter ('.class_basename($builder->model).')')->run(function () use ($query, $scope) {
+                return $query['filter']($scope);
+            });
+
+            if ($filter?->isEmpty()) {
+                return;
+            }
+
+            $tntEngine = $engine->getTNT()->engine;
+            if ($filter !== null && !($tntEngine instanceof FilterableSqliteEngine)) {
+                throw new \LogicException('Search index engine for '.get_class($builder->model).' does not support filtering');
+            }
+
+            try {
+                // The engine instance is shared, so the filter must only be in place for this one index search.
+                if ($tntEngine instanceof FilterableSqliteEngine) {
+                    $tntEngine->setDocumentFilter($filter);
+                }
+
+                $indexResults = app('clockwork')->event('Search Index ('.class_basename($builder->model).')')->run(function () use ($builder, $limit, $maxPages) {
+                    return $builder->take(($limit * 2 * $maxPages) + 1)->raw();
+                });
+            } finally {
+                if ($tntEngine instanceof FilterableSqliteEngine) {
+                    $tntEngine->setDocumentFilter(null);
+                }
+            }
+
             $totalIndexResults = $indexResults['hits'];
             $indexPages = array_chunk($indexResults['ids'], $limit * 2);
 
@@ -270,22 +367,20 @@ class SearchController extends Controller
 
             $path = $nextResult->__path__;
 
-            // First check user access
+            // First check user access.
+            // The scope filter already excludes anything the user can't access, but this remains the authoritative check.
             $hasAccess = false;
             foreach ($accessControlEntries as $entry) {
-                if (str_starts_with($path, $entry->path)) {
+                // The deepest rule that is the path itself or one of its ancestors wins.
+                // Entries are in reverse path order, so the first match is the deepest.
+                $entryPath = strval($entry->path);
+                if ($entryPath === '' || $path === $entryPath || str_starts_with($path, $entryPath.'/')) {
                     $hasAccess = $entry->users_count > 0;
                     break;
                 }
             }
 
             if (!$hasAccess) {
-                continue;
-            }
-
-            // Then any custom filter function provided
-            $filterModel = $queries[$bestResultIndex][2] ?? null;
-            if ($filterModel !== null && !$filterModel($nextResult)) {
                 continue;
             }
 

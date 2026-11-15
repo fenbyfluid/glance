@@ -8,6 +8,7 @@ use App\Jobs\ExtractTextJob;
 use App\Media\MediaContentKind;
 use App\Media\MediaInfo;
 use App\Media\OpenSubtitlesHasher;
+use App\Search\FilterableSqliteEngine;
 use App\Utilities\Path;
 use App\Utilities\ScopeHavingAccess;
 use Illuminate\Database\Eloquent\Model;
@@ -51,7 +52,8 @@ class IndexedFile extends Model
 
     public function searchIndexShouldBeUpdated(): bool
     {
-        return $this->wasRecentlyCreated || $this->wasChanged('name') || !$this->shouldBeSearchable();
+        // The directory and kind are stored in the index for filtering, see toSearchableArray().
+        return $this->wasRecentlyCreated || $this->wasChanged(['name', 'directory_id', 'kind']) || !$this->shouldBeSearchable();
     }
 
     public function toSearchableArray(): array
@@ -61,12 +63,15 @@ class IndexedFile extends Model
         return [
             'id' => $this->id,
             'name' => implode(' ', $tokenizer->tokenize($this->name)),
+            // Stored alongside the index for filtering searches, see FilterableSqliteEngine.
+            FilterableSqliteEngine::META_DIRECTORY_ID => $this->directory_id,
+            FilterableSqliteEngine::META_KIND => $this->kind?->value,
         ];
     }
 
     public function syncWithSearchUsingQueue(): string
     {
-        return 'index';
+        return 'search';
     }
 
     public function directory(): BelongsTo

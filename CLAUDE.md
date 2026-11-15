@@ -22,7 +22,7 @@ notes (DB caching plan, metadata/search ideas) live in `README.md`; read it befo
 ## Commands
 
 ```bash
-php artisan test                      # PHPUnit (69 tests, ~2s); sqlite :memory:, sync queue, MEDIA_PATH=resources/test-media
+php artisan test                      # PHPUnit (83 tests, ~2s); sqlite :memory:, sync queue, MEDIA_PATH=resources/test-media
 php artisan test --filter=PathTest
 vendor/bin/pint path/to/File.php      # format only files you touched (see Style)
 composer dev                          # serve + queue:listen + pail + vite
@@ -87,6 +87,10 @@ php artisan app:hash [-T] [-m method...] [-r reference] [path...] # compute osha
 - Queues (see `config/horizon.php`): `default` on `redis_blocking`; `index`, `ffprobe`, `generation-hash`,
   `generation-tile`, `ffmpeg-capture`, `ffmpeg-wait` on `redis`, priority order, `tries=1`, `timeout=60`.
   `WaitForFrameCaptureSlot` works around Horizon draining low-priority queues ahead of newly-fed high ones.
+  Scout syncing (`MakeSearchable`/`RemoveFromSearch`) goes to `search`, a single-process supervisor: the SQLite indexes
+  allow one writer, and `FilterableSqliteEngine` takes the write lock up front (`BEGIN IMMEDIATE`) so writers wait
+  rather than failing with "database is locked". It also resets upstream's cached statements after each write: a
+  part-read SELECT kept a read snapshot open, so the WAL could never restart and grew to tens of GB.
 - Generated images (thumbs/filmstrips) are AVIF via libvips (`jcupitt/vips`), stored at
   `MEDIA_PATH/.thumbs/xxxx/yyyy/<uuid>.avif` (`Path::makeThumbnailPath`), served by `/_image/{uuid}.avif`.
   `IndexedFile` model events delete old images on change/force-delete; `app:clean-images` repairs drift.
@@ -100,8 +104,14 @@ php artisan app:hash [-T] [-m method...] [-r reference] [path...] # compute osha
 ### Search (`SearchController`)
 - Laravel Scout + TNTSearch (MySQL engine); custom `tntsearch_stemmed` engine (Porter) registered in
   `AppServiceProvider`. Name search is n-gram on dirs/files; content search over extracted text and scene synopses.
-- ACL is applied *after* the index query with Phabricator-style "overheating": fetch more, filter, fire
-  `SearchOverheated` if the limit was hit. Index files live in `storage/*.index*` (gitignored).
+- ACL, the "under this path" filter and kinds are pushed *into* the index query. `Search\FilterableSqliteEngine`
+  (configured as `scout.tntsearch.engine`) stores each file/text document's directory ID and kind in a `document_meta`
+  table in the index (from `__directory_id`/`__kind` keys in `toSearchableArray()`, so indexes need `scout:import`, not
+  `tntsearch:import`). `Search\SearchScope` selects the allowed *directories* in SQL (ACL rules only target directories);
+  the engine joins a `Search\DocumentFilter` against the doclist via temp tables, so the per-term `maxDocs` cap applies
+  within the allowed set. Never enumerate allowed file IDs per request (16s on MariaDB at prod scale). Skipped when
+  unrestricted. The PHP ACL check after the query stays as the authoritative backstop, with Phabricator-style
+  "overheating" (`SearchOverheated`). Index files live in `storage/*.index*` (gitignored). Tests: `SearchTest`.
 
 ### Models / data
 `IndexedDirectory` (self-referential tree via `parent_id`, unique `path`), `IndexedFile` (inode, mtime, size, kind,

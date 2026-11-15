@@ -45,7 +45,7 @@ class IndexedDirectory extends Model
 
     public function syncWithSearchUsingQueue(): string
     {
-        return 'index';
+        return 'search';
     }
 
     public function parent(): HasOne

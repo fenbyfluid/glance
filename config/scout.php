@@ -219,7 +219,8 @@ return [
         'searchBoolean' => env('TNTSEARCH_BOOLEAN', false),
         'maxDocs' => env('TNTSEARCH_MAX_DOCS', 5000),
         'driver' => 'mysql',
-        'engine' => \TeamTNT\TNTSearch\Engines\SqliteEngine::class,
+        // Upstream SqliteEngine plus in-index document ID filtering, see App\Search\FilterableSqliteEngine.
+        'engine' => \App\Search\FilterableSqliteEngine::class,
         'stemmer' => \TeamTNT\TNTSearch\Stemmer\NoStemmer::class,
         'tokenizer' => \TeamTNT\TNTSearch\Tokenizer\Tokenizer::class,
         // 'stemmer' => \TeamTNT\TNTSearch\Stemmer\PorterStemmer::class,

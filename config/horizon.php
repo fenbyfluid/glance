@@ -209,12 +209,29 @@ return [
             'timeout' => 60,
             'nice' => 0,
         ],
+        'supervisor-search' => [
+            'connection' => 'redis_blocking',
+            // Scout index syncing. The TNTSearch indexes are SQLite files, which only allow one writer at a time, so
+            // more workers just wait on each other's write locks (and starve, timing out) without adding throughput.
+            'queue' => ['search'],
+            'balance' => false,
+            'maxProcesses' => 1,
+            'minProcesses' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 100,
+            'memory' => 128,
+            'tries' => 1,
+            'timeout' => 60,
+            'sleep' => 0,
+            'nice' => 0,
+        ],
     ],
 
     'environments' => [
         '*' => [
             'supervisor-default' => [],
             'supervisor-indexing' => [],
+            'supervisor-search' => [],
         ],
     ],
 ];
