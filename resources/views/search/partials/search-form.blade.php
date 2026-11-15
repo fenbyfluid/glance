@@ -1,9 +1,13 @@
-<form x-data="{{ Js::from([ 'name' => route('search.name'), 'content' => route('search.content'), 'epoch' => 0, 'overheated' => false, 'results' => [] ]) }}" x-on:submit.prevent="performSearch" class="space-y-3 h-full flex flex-col">
+<form x-data="{{ Js::from([ 'name' => route('search.name'), 'content' => route('search.content'), 'epoch' => 0, 'loading' => false, 'overheated' => false, 'results' => [] ]) }}" x-on:submit.prevent="performSearch" class="space-y-3 h-full flex flex-col">
     <div>
         <label for="query" class="block sr-only">{{ __('Search Query') }}</label>
         <div class="flex items-center rounded-t-lg bg-white dark:bg-gray-800 px-2 sm:px-4 py-1 sm:py-2 shadow-sm has-[input:focus-within]:outline-2 has-[input:focus-within]:-outline-offset-2 has-[input:focus-within]:outline-indigo-600 pointer-events-auto">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6 shrink-0 text-base text-gray-400 select-none sm:text-sm/6">
+            <svg x-show="!loading" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6 shrink-0 text-base text-gray-400 select-none sm:text-sm/6">
                 <path fill-rule="evenodd" d="M10.5 3.75a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM2.25 10.5a8.25 8.25 0 1 1 14.59 5.28l4.69 4.69a.75.75 0 1 1-1.06 1.06l-4.69-4.69A8.25 8.25 0 0 1 2.25 10.5Z" clip-rule="evenodd" />
+            </svg>
+            <svg x-show="loading" style="display: none" role="status" aria-label="{{ __('Searching…') }}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" class="size-6 shrink-0 text-indigo-600 dark:text-indigo-400 select-none animate-spin">
+                <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" class="opacity-25" />
+                <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
             </svg>
             <input id="query" type="text" name="query" placeholder="" autofocus x-on:input.debounce="$event.target.form.requestSubmit()" class="block rounded-lg min-w-0 grow pl-2 text-base text-gray-900 dark:text-gray-100 dark:bg-gray-800 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:ring-0 sm:text-sm/6 border-none" />
         </div>
@@ -38,7 +42,7 @@
          so results became unscrollable in Safari (stuck after a few seconds on macOS, not at all on iOS). It's
          sized to its content (min-h-0 lets it shrink to fit) rather than growing to fill the modal, so the empty
          area below the results doesn't swallow clicks meant for the backdrop. --}}
-    <div class="min-h-0 overflow-y-auto overscroll-contain rounded-t-lg pointer-events-auto">
+    <div class="min-h-0 overflow-y-auto overscroll-contain rounded-t-lg pointer-events-auto transition-opacity" :class="loading && 'opacity-60'">
         <div class="space-y-3">
             <template x-for="result in results" :key="result.link">
                 <a :href="result.link" class="p-2 sm:p-4 bg-white dark:bg-gray-800 shadow-sm rounded-lg flex gap-2 sm:gap-3 pointer-events-auto">

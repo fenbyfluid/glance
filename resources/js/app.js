@@ -27,11 +27,14 @@ window.performSearch = function performSearch(event) {
     const expectedEpoch = ++this.$data.epoch;
 
     if (query.length === 0) {
+        this.$data.loading = false;
         this.$data.overheated = false;
         this.$data.results = [];
 
         return;
     }
+
+    this.$data.loading = true;
 
     const searchParams = new URLSearchParams(formData.entries());
 
@@ -54,12 +57,17 @@ window.performSearch = function performSearch(event) {
     }).catch(error => {
         console.error(error);
 
-        if (this.$data.epoch === expectedEpoch) {
+        if (this.$data.epoch !== expectedEpoch) {
             return;
         }
 
         this.$data.overheated = false;
         this.$data.results = [];
+    }).finally(() => {
+        // Only the latest request owns the indicator, so an older one finishing late doesn't hide it.
+        if (this.$data.epoch === expectedEpoch) {
+            this.$data.loading = false;
+        }
     });
 }
 
