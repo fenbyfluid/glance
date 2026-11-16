@@ -13,3 +13,16 @@
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
 }
+
+/* Screens where the search box takes up too much room to keep on screen while scrolling the results: narrow ones
+   (phones in portrait) and short ones (phones in landscape). The two must stay exact opposites. compact uses the block
+   form because the shorthand splits on commas, turning the second media query into a broken selector. */
+@custom-variant compact {
+    @media (width < 40rem) {
+        @slot;
+    }
+    @media (height < 30rem) {
+        @slot;
+    }
+}
+@custom-variant spacious (@media (width >= 40rem) and (height >= 30rem));
