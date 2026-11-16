@@ -49,6 +49,17 @@ Web-based media viewer
 * [ ] File upload
 * [ ] File deletion and renaming, maybe ?
 
+## AI Usage
+
+Glance is a long-running personal project with limited human time available. To speed up development, Claude Code was
+onboarded to the repository on 14 November 2026 (see `CLAUDE.md`, which holds the project context it works from).
+
+* **Attribution:** commits whose changes were written by Claude from a prompt carry a
+  `Co-Authored-By: Claude …` trailer naming the model, so they can be found with
+  `git log --grep='Co-Authored-By: Claude'`.
+* **Human review:** nothing is committed without a human reviewing it first. Claude prepares the change and a proposed
+  commit message; the diff is reviewed, revised where needed, and only committed to `main` once explicitly approved.
+
 ## Database Caching Plan
 
 1. User visits index for a path using a Directory source  
