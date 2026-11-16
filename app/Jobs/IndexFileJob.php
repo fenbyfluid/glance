@@ -56,6 +56,11 @@ class IndexFileJob implements ShouldQueue
             $this->fileEntry->writeSceneText($fingerprint->stashScene);
         }
 
+        // There's nothing in the file to generate anything from.
+        if ($fingerprint->isBlank()) {
+            return;
+        }
+
         // TODO: Consider moving this into IndexedFile so it can be close to the requiresGeneration() logic.
         // TODO: See event note in \App\Models\IndexedFile::updateWithInfo
 

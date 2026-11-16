@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Casts\BinaryToHex;
+use App\Media\OpenSubtitlesHasher;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -24,6 +25,15 @@ class FileFingerprint extends Model
         'stash_scene_id',
         'stash_searched_at',
     ];
+
+    /**
+     * Whether this is the fingerprint shared by every file with nothing in it (empty, or nothing but zeros).
+     * There's nothing to know about those, so nothing should be generated from them or looked up for them.
+     */
+    public function isBlank(): bool
+    {
+        return $this->oshash === OpenSubtitlesHasher::BLANK_HASH;
+    }
 
     public function files(): HasMany
     {

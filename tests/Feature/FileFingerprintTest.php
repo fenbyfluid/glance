@@ -83,6 +83,32 @@ class FileFingerprintTest extends TestCase
         $this->assertMatchesRegularExpression('/^[0-9a-f]{16}$/', $files['file.mp4']->fingerprint->oshash);
     }
 
+    public function test_nothing_is_generated_for_files_with_nothing_in_them(): void
+    {
+        $this->fakeGenerationJobs();
+
+        file_put_contents($this->mediaPath.'/empty.mp4', '');
+        file_put_contents($this->mediaPath.'/zeros.mp4', str_repeat("\0", 100_000));
+        file_put_contents($this->mediaPath.'/more-zeros.mp4', str_repeat("\0", 300_000));
+
+        dispatch(new IndexDirectoryJob('', -1));
+
+        $files = IndexedFile::with('fingerprint')->get();
+
+        $this->assertCount(3, $files);
+        $this->assertCount(1, $files->pluck('fingerprint_id')->unique());
+        $this->assertTrue($files[0]->fingerprint->isBlank());
+        $this->assertFalse($files[0]->requiresGeneration());
+
+        // Asking for what's missing doesn't change that, and they aren't searched for either.
+        dispatch(new IndexDirectoryJob('', -1, forceDirectoryTraversal: true, generateMissing: true));
+        Bus::assertNothingDispatched();
+
+        Http::fake();
+        (new SearchScenesInStashBoxJob)->handle();
+        Http::assertNothingSent();
+    }
+
     public function test_what_we_know_survives_a_file_being_moved_and_reindexed(): void
     {
         $this->fakeGenerationJobs();

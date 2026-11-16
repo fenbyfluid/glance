@@ -48,6 +48,7 @@ class SearchScenesInStashBoxJob implements ShouldQueue
 
         if ($this->fingerprints->isEmpty()) {
             $this->fingerprints = Cache::lock(self::class, 60)->block(60, function () use (&$claimedIds) {
+                // Blank files never get a perceptual hash, so are never searched for.
                 $fingerprints = FileFingerprint::whereNull('stash_searched_at')
                     ->whereNotNull('phash')
                     ->whereHas('files', fn ($query) => $query->where('kind', MediaContentKind::Video))

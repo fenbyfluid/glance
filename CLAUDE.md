@@ -22,7 +22,7 @@ notes (DB caching plan, metadata/search ideas) live in `README.md`; read it befo
 ## Commands
 
 ```bash
-php artisan test                      # PHPUnit (89 tests, ~2s); sqlite :memory:, sync queue, MEDIA_PATH=resources/test-media
+php artisan test                      # PHPUnit (97 tests, ~2s); sqlite :memory:, sync queue, MEDIA_PATH=resources/test-media
 php artisan test --filter=PathTest
 vendor/bin/pint path/to/File.php      # format only files you touched (see Style)
 composer dev                          # serve + queue:listen + pail + vite
@@ -89,6 +89,9 @@ php artisan app:hash [-T] [-m method...] [-r reference] [path...] # compute osha
   files, so they survive the indexer deleting and recreating a moved file, and copies share one. `IndexFileJob` only has
   to rewrite the scene's searchable text (which belongs to the file). `requiresGeneration()` needs `fingerprint` loaded.
   Query conditions on the hash columns aren't cast: pass `hex2bin()` values (see `findOrCreateForHash()`).
+- `OpenSubtitlesHasher` deliberately departs from real OSHash for files with nothing in them (empty, or all zeros in
+  the hashed head/tail): they all get the all-zero `BLANK_HASH` instead of their size, so share one fingerprint.
+  `FileFingerprint::isBlank()` ⇒ generate nothing and look nothing up (`IndexFileJob`, `requiresGeneration()`).
 - `appendToChain()` returns the *current* job, so queue closures with `CallQueuedClosure::create(...)->onQueue()`;
   chaining `->onQueue()` after it silently sends them to `default`.
 - Queues (see `config/horizon.php`): `default` on `redis_blocking`; `index`, `ffprobe`, `generation-hash`,
@@ -125,7 +128,7 @@ php artisan app:hash [-T] [-m method...] [-r reference] [path...] # compute osha
 `IndexedDirectory` (self-referential tree via `parent_id`, unique `path`), `IndexedFile` (inode, mtime, size, kind,
 mime, `media_info`, thumbnail/filmstrip uuids, `fingerprint_id`), `FileFingerprint`, `IndexedFileText`,
 `Stash{Scene,Performer,Studio,Tag,TagCategory}`, `AccessControlEntry`, `User`. Custom casts in `app/Casts`
-(`AsMediaInfo`, `BinaryToHex`, `Compressed`). Migrations are hand-maintained; latest moves the hashes and scene match into `file_fingerprints`.
+(`AsMediaInfo`, `BinaryToHex`, `Compressed`). Migrations are hand-maintained; latest regroups already-indexed zero-filled files under the blank fingerprint.
 
 ## Environment
 

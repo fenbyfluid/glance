@@ -22,14 +22,43 @@ class OpenSubtitlesHasherTest extends TestCase
 
         $data = $randomizer->getBytes($length);
 
+        $this->assertEquals($expected, $this->hash($data));
+    }
+
+    #[TestWith([0])]
+    #[TestWith([5])]
+    #[TestWith([OpenSubtitlesHasher::CHUNK_SIZE >> 1])]
+    #[TestWith([OpenSubtitlesHasher::CHUNK_SIZE + (OpenSubtitlesHasher::CHUNK_SIZE >> 1)])]
+    #[TestWith([OpenSubtitlesHasher::CHUNK_SIZE * 3])]
+    public function test_files_with_nothing_in_them_get_the_blank_hash(int $length)
+    {
+        $this->assertSame(OpenSubtitlesHasher::BLANK_HASH, $this->hash(str_repeat("\0", $length)));
+    }
+
+    public function test_only_the_hashed_parts_of_a_file_are_checked_for_being_blank()
+    {
+        $zeros = str_repeat("\0", OpenSubtitlesHasher::CHUNK_SIZE);
+
+        $this->assertSame(OpenSubtitlesHasher::BLANK_HASH, $this->hash($zeros.'something'.$zeros));
+    }
+
+    public function test_small_files_with_something_in_them_are_not_blank()
+    {
+        // Too short to have any whole words to sum, so the hash is just the size.
+        $this->assertSame('0000000000000005', $this->hash('hello'));
+
+        // The same goes for anything after the last whole word.
+        $this->assertSame('000000000000000a', $this->hash(str_repeat("\0", 8).'hi'));
+    }
+
+    private function hash(string $data): string
+    {
         $temporaryPath = tempnam(sys_get_temp_dir(), 'oshash_input_');
 
         try {
             file_put_contents($temporaryPath, $data);
 
-            $hash = (new OpenSubtitlesHasher)->hash($temporaryPath);
-
-            $this->assertEquals($expected, $hash);
+            return (new OpenSubtitlesHasher)->hash($temporaryPath);
         } finally {
             if (file_exists($temporaryPath)) {
                 unlink($temporaryPath);

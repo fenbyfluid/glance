@@ -143,6 +143,10 @@ class IndexedFile extends Model
 
     public function requiresGeneration(): bool
     {
+        if ($this->fingerprint->isBlank()) {
+            return false;
+        }
+
         return ($this->kind->canProbeMediaInfo() && $this->media_info === null) ||
             ($this->kind->canThumbnail() && $this->thumbnail === null) ||
             ($this->kind === MediaContentKind::Video && $this->filmstrip === null) ||
