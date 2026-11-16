@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\FileFingerprint;
 use App\Models\IndexedFile;
 use App\Utilities\Path;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -138,7 +139,7 @@ class IndexedFileImageCleanupTest extends TestCase
             'size' => 1,
             'mime_type' => 'image/jpeg',
             'kind' => 'image',
-            'oshash' => '12345678',
+            'fingerprint_id' => FileFingerprint::findOrCreateForHash(bin2hex('12345678'))->id,
             'thumbnail' => (string) Str::uuid(),
             'filmstrip' => (string) Str::uuid(),
         ]);

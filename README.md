@@ -17,7 +17,7 @@ Web-based media viewer
 * [x] Pagination would be nice to control HTML size
 * [x] In-database additional metadata storage
   * [x] Indexed on file path
-  * [ ] Indexed on file OsHash to handle file moves
+  * [x] Indexed on file OsHash to handle file moves
 * Background queue tasks:
   * [x] Thumbnail generation
   * [x] Timeline preview generation
@@ -111,3 +111,8 @@ We currently store the OsHash and PHash in the main files table, we think we mig
 audio and videos. There are some proposed changes in Stash to the PHash algorithm necessitating a "v2", and also adding
 an audio "AHash" algorithm (for video audio, so they'd have both, but we'd also like it for audio files). These might
 motivate moving the fingerprints out of the main files table, and possibly as far as the general KV store.
+
+The fingerprints have now made that move: each file points at a fingerprint record keyed by OsHash, which holds the
+PHash and the matched StashDB scene. They outlive the file entries, so follow a file's contents through moves and copies
+without the indexer needing to recognise a move (it still deletes and recreates the file entry, regenerating everything
+else). Anything else that's derived purely from the contents could go the same way, as could the new hash algorithms.

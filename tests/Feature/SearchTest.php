@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AccessControlEntry;
+use App\Models\FileFingerprint;
 use App\Models\IndexedDirectory;
 use App\Models\IndexedFile;
 use App\Models\IndexedFileText;
@@ -207,7 +208,7 @@ class SearchTest extends TestCase
             'mtime' => 1,
             'size' => 1,
             'mime_type' => 'text/plain',
-            'oshash' => str_repeat('0', 16),
+            'fingerprint_id' => FileFingerprint::findOrCreateForHash(str_repeat('0', 16))->id,
         ]);
         $file->extractedText()->createMany([['file_id' => $file->id, 'text' => 'a haystack with a needle']]);
 
@@ -301,7 +302,7 @@ class SearchTest extends TestCase
             'mtime' => 1,
             'size' => 1,
             'mime_type' => 'text/plain',
-            'oshash' => random_bytes(8),
+            'fingerprint_id' => FileFingerprint::findOrCreateForHash(bin2hex(random_bytes(8)))->id,
         ]);
     }
 

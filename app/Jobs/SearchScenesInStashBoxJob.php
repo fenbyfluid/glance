@@ -2,10 +2,9 @@
 
 namespace App\Jobs;
 
-use App\Enums\ExtractedTextStatus;
 use App\Enums\StashFingerprintAlgorithm;
 use App\Media\MediaContentKind;
-use App\Models\IndexedFile;
+use App\Models\FileFingerprint;
 use App\Models\StashPerformer;
 use App\Models\StashScene;
 use App\Models\StashStudio;
@@ -19,7 +18,6 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 
 class SearchScenesInStashBoxJob implements ShouldQueue
 {
@@ -28,16 +26,16 @@ class SearchScenesInStashBoxJob implements ShouldQueue
     use Batchable, Queueable;
 
     /**
-     * @param  Collection<IndexedFile>  $files
+     * @param  Collection<FileFingerprint>  $fingerprints  Leave empty to search for the next unsearched ones.
      */
     public function __construct(
         #[WithoutRelations]
-        public Collection $files = new Collection,
+        public Collection $fingerprints = new Collection,
     ) {}
 
     public function handle(): void
     {
-        if ($this->files->count() > self::MAX_SCENES) {
+        if ($this->fingerprints->count() > self::MAX_SCENES) {
             throw new \Exception('Too many scenes requested for batch search');
         }
 
@@ -45,39 +43,48 @@ class SearchScenesInStashBoxJob implements ShouldQueue
             return;
         }
 
-        if ($this->files->isEmpty()) {
-            $this->files = Cache::lock(self::class, 60)->block(60, function () {
-                $files = IndexedFile::whereNull('stash_scene_id')
-                    ->where('kind', MediaContentKind::Video)
+        // The fingerprints we've marked as searched up front, to stop other jobs searching for them too.
+        $claimedIds = [];
+
+        if ($this->fingerprints->isEmpty()) {
+            $this->fingerprints = Cache::lock(self::class, 60)->block(60, function () use (&$claimedIds) {
+                $fingerprints = FileFingerprint::whereNull('stash_searched_at')
                     ->whereNotNull('phash')
+                    ->whereHas('files', fn ($query) => $query->where('kind', MediaContentKind::Video))
                     ->take(self::MAX_SCENES)->get();
 
-                IndexedFile::whereIn('id', $files->pluck('id'))->update([
-                    'stash_scene_id' => '00000000-0000-0000-0000-000000000000',
+                $claimedIds = $fingerprints->modelKeys();
+
+                FileFingerprint::whereIn('id', $claimedIds)->update([
+                    'stash_searched_at' => now(),
                 ]);
 
-                return $files;
+                return $fingerprints;
             });
         } else {
-            // TODO: Sanity check the passed in files.
+            // TODO: Sanity check the passed in fingerprints.
         }
 
-        if ($this->files->isEmpty()) {
+        if ($this->fingerprints->isEmpty()) {
             return;
         }
 
         try {
-            $this->processFiles();
+            $this->processFingerprints($claimedIds);
         } catch (\Throwable $exception) {
-            IndexedFile::whereIn('id', $this->files->pluck('id'))->update([
-                'stash_scene_id' => null,
+            // Release the claims we didn't get to.
+            FileFingerprint::whereIn('id', $claimedIds)->update([
+                'stash_searched_at' => null,
             ]);
 
             throw $exception;
         }
     }
 
-    private function processFiles(): void
+    /**
+     * @param  list<int>  $claimedIds  Fingerprints are removed from this as their results are stored.
+     */
+    private function processFingerprints(array &$claimedIds): void
     {
         $query = <<<'EOT'
         query ($fingerprints: [[FingerprintQueryInput!]!]!) {
@@ -134,10 +141,10 @@ class SearchScenesInStashBoxJob implements ShouldQueue
         }
         EOT;
 
-        $fingerprints = $this->files->map(function (IndexedFile $file) {
+        $fingerprints = $this->fingerprints->map(function (FileFingerprint $fingerprint) {
             return [
-                ['algorithm' => StashFingerprintAlgorithm::OsHash, 'hash' => $file->oshash],
-                ['algorithm' => StashFingerprintAlgorithm::PHash, 'hash' => $file->phash],
+                ['algorithm' => StashFingerprintAlgorithm::OsHash, 'hash' => $fingerprint->oshash],
+                ['algorithm' => StashFingerprintAlgorithm::PHash, 'hash' => $fingerprint->phash],
             ];
         })->values();
 
@@ -156,25 +163,28 @@ class SearchScenesInStashBoxJob implements ShouldQueue
             throw new \RuntimeException('GraphQL errors: '.json_encode($response->errors));
         }
 
-        foreach ($this->files->values() as $i => $file) {
-            $this->processFile($file, $response->data->scenes[$i]);
+        foreach ($this->fingerprints->values() as $i => $fingerprint) {
+            $this->processFingerprint($fingerprint, $response->data->scenes[$i]);
+
+            $claimedIds = array_values(array_diff($claimedIds, [$fingerprint->getKey()]));
         }
     }
 
-    private function processFile(IndexedFile $file, array $scenes): void
+    private function processFingerprint(FileFingerprint $fingerprint, array $scenes): void
     {
         // TODO: Check through the scenes and only associate with very high-quality matches.
         $sceneData = $scenes[0] ?? null;
 
         if (!$sceneData) {
-            $file->update([
-                'stash_scene_id' => '00000000-0000-0000-0000-000000000000',
+            $fingerprint->update([
+                'stash_scene_id' => null,
+                'stash_searched_at' => now(),
             ]);
 
             return;
         }
 
-        DB::transaction(function () use ($file, $sceneData) {
+        DB::transaction(function () use ($fingerprint, $sceneData) {
             if ($sceneData->studio?->parent?->parent !== null) {
                 StashStudio::updateOrCreate([
                     'id' => $sceneData->studio->parent->parent->id,
@@ -267,71 +277,15 @@ class SearchScenesInStashBoxJob implements ShouldQueue
 
             $scene->performers()->sync($performerPivotData);
 
-            $file->update([
-                'stash_scene_id' => $sceneData->id,
+            $fingerprint->update([
+                'stash_scene_id' => $scene->id,
+                'stash_searched_at' => now(),
             ]);
 
-            // Safety check in case we ever implement text extraction for videos.
-            if ($file->extracted_text_status !== ExtractedTextStatus::Pending) {
-                Log::warning(sprintf('File %s already has extracted text', $file->getKey()));
-
-                return;
+            // The searchable text belongs to the files, so every file with these contents needs it.
+            foreach ($fingerprint->files()->get() as $file) {
+                $file->writeSceneText($scene);
             }
-
-            foreach ($file->extractedText()->get() as $extractedText) {
-                $extractedText->forceDelete();
-            }
-
-            $keyInfoChunk = [];
-
-            if ($scene->title) {
-                $keyInfoChunk[] = $scene->title;
-            }
-
-            if ($sceneData->studio !== null) {
-                $studioName = '';
-
-                if ($sceneData->studio->parent?->parent !== null) {
-                    $studioName .= $sceneData->studio->parent->parent->name.' - ';
-                }
-
-                if ($sceneData->studio->parent !== null) {
-                    $studioName .= $sceneData->studio->name.' - ';
-                }
-
-                $studioName .= $sceneData->studio->name;
-
-                $keyInfoChunk[] = $studioName;
-            }
-
-            if ($scene->details) {
-                $keyInfoChunk[] = $scene->details;
-            }
-
-            foreach ($performers as $id => $performer) {
-                $name = $performer['name'];
-
-                $appearingAs = $performerPivotData[$id]['as'] ?? null;
-                if ($appearingAs !== null) {
-                    $name .= ' ('.$appearingAs.')';
-                }
-
-                $keyInfoChunk[] = $name;
-            }
-
-            $tagChunk = [];
-            foreach ($scene->tags as $tag) {
-                $tagChunk[] = $tag['name'];
-            }
-
-            $chunks = collect([$keyInfoChunk, $tagChunk])
-                ->filter(fn ($chunk) => count($chunk) > 0)
-                ->map(fn ($chunk) => [
-                    'file_id' => $file->getKey(),
-                    'text' => implode("\n", $chunk),
-                ]);
-
-            $file->extractedText()->createMany($chunks);
         });
     }
 }

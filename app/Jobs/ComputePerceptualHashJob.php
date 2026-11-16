@@ -33,7 +33,7 @@ class ComputePerceptualHashJob implements ShouldQueue
         if ($this->outputObject instanceof Deferred) {
             $this->outputObject->set($hash);
         } else {
-            $this->outputObject->update([
+            $this->outputObject->fingerprint()->firstOrFail()->update([
                 'phash' => $hash,
             ]);
         }

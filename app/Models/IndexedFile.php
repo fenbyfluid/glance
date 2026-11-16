@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Casts\BinaryToHex;
 use App\Enums\ExtractedTextStatus;
 use App\Jobs\ExtractTextJob;
 use App\Media\MediaContentKind;
@@ -15,6 +14,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Log;
 use Laravel\Scout\Searchable;
 use TeamTNT\TNTSearch\Tokenizer\NGramTokenizer;
 
@@ -35,11 +35,9 @@ class IndexedFile extends Model
         'kind',
         'mime_type',
         'media_info',
-        'oshash',
-        'phash',
+        'fingerprint_id',
         'thumbnail',
         'filmstrip',
-        'stash_scene_id',
         'extracted_text_status',
     ];
 
@@ -84,9 +82,28 @@ class IndexedFile extends Model
         return $this->hasMany(IndexedFileText::class, 'file_id');
     }
 
-    public function stashScene(): BelongsTo
+    public function fingerprint(): BelongsTo
     {
-        return $this->belongsTo(StashScene::class);
+        return $this->belongsTo(FileFingerprint::class, 'fingerprint_id');
+    }
+
+    /**
+     * Replaces the file's searchable text with the description of the scene it has been matched to.
+     */
+    public function writeSceneText(StashScene $scene): void
+    {
+        // Safety check in case we ever implement text extraction for videos.
+        if ($this->extracted_text_status !== ExtractedTextStatus::Pending) {
+            Log::warning(sprintf('File %s already has extracted text', $this->getKey()));
+
+            return;
+        }
+
+        foreach ($this->extractedText()->get() as $extractedText) {
+            $extractedText->forceDelete();
+        }
+
+        $this->extractedText()->createMany(array_map(fn (string $chunk) => ['text' => $chunk], $scene->textChunks()));
     }
 
     public function isIndexOutdated(\SplFileInfo $info): bool
@@ -100,15 +117,17 @@ class IndexedFile extends Model
     {
         $this->fill(self::attributesForInfo($info));
 
-        // If the file kind or hash has changed, clear anything based on the contents.
-        if ($this->isDirty(['kind', 'oshash'])) {
+        // If the file kind or contents have changed, clear anything based on them. What we know from the contents
+        // alone belongs to the fingerprint, so has changed along with it.
+        if ($this->isDirty(['kind', 'fingerprint_id'])) {
+            $this->unsetRelation('fingerprint');
+
             // TODO: It probably makes sense for us to dispatch an event after save() if we've done this.
             //       It'll let us decouple the regeneration job dispatch from IndexFileJob.
             //       We should also dispatch that same event on created.
 
             $this->fill([
                 'media_info' => null,
-                'phash' => null,
                 'thumbnail' => null,
                 'filmstrip' => null,
                 'extracted_text_status' => ExtractedTextStatus::Pending,
@@ -127,7 +146,7 @@ class IndexedFile extends Model
         return ($this->kind->canProbeMediaInfo() && $this->media_info === null) ||
             ($this->kind->canThumbnail() && $this->thumbnail === null) ||
             ($this->kind === MediaContentKind::Video && $this->filmstrip === null) ||
-            ($this->kind->canPerceptualHash() && $this->phash === null) ||
+            ($this->kind->canPerceptualHash() && $this->fingerprint->phash === null) ||
             (ExtractTextJob::canExtractText($this->kind) && $this->extracted_text_status === ExtractedTextStatus::Pending);
     }
 
@@ -136,8 +155,6 @@ class IndexedFile extends Model
         return [
             'kind' => MediaContentKind::class,
             'media_info' => MediaInfo::class,
-            'oshash' => BinaryToHex::withLength(8),
-            'phash' => BinaryToHex::withLength(8),
             'extracted_text_status' => ExtractedTextStatus::class,
         ];
     }
@@ -164,7 +181,7 @@ class IndexedFile extends Model
             'size' => $info->getSize(),
             'kind' => $mediaContentKind,
             'mime_type' => $mimeType,
-            'oshash' => $osHash,
+            'fingerprint_id' => FileFingerprint::findOrCreateForHash($osHash)->getKey(),
         ];
     }
 

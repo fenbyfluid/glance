@@ -22,7 +22,7 @@ notes (DB caching plan, metadata/search ideas) live in `README.md`; read it befo
 ## Commands
 
 ```bash
-php artisan test                      # PHPUnit (83 tests, ~2s); sqlite :memory:, sync queue, MEDIA_PATH=resources/test-media
+php artisan test                      # PHPUnit (89 tests, ~2s); sqlite :memory:, sync queue, MEDIA_PATH=resources/test-media
 php artisan test --filter=PathTest
 vendor/bin/pint path/to/File.php      # format only files you touched (see Style)
 composer dev                          # serve + queue:listen + pail + vite
@@ -84,6 +84,11 @@ php artisan app:hash [-T] [-m method...] [-r reference] [path...] # compute osha
   `MediaInfo` cast), `GenerateMediaFileThumbnailJob`, `GenerateMediaFileFilmstripJob`,
   `GenerateMediaFilePerceptualHashJob` (Stash-compatible phash via `VideoPerceptualHasher`), `ExtractTextJob`.
   Under a `sync` batch (CLI) generation runs inline.
+- **What's known purely from a file's contents lives on its `FileFingerprint`** (`file_fingerprints`: unique `oshash`,
+  `phash`, `stash_scene_id`), not on the `IndexedFile`. Fingerprints are found by hash and are never deleted with their
+  files, so they survive the indexer deleting and recreating a moved file, and copies share one. `IndexFileJob` only has
+  to rewrite the scene's searchable text (which belongs to the file). `requiresGeneration()` needs `fingerprint` loaded.
+  Query conditions on the hash columns aren't cast: pass `hex2bin()` values (see `findOrCreateForHash()`).
 - `appendToChain()` returns the *current* job, so queue closures with `CallQueuedClosure::create(...)->onQueue()`;
   chaining `->onQueue()` after it silently sends them to `default`.
 - Queues (see `config/horizon.php`): `default` on `redis_blocking`; `index`, `ffprobe`, `generation-hash`,
@@ -101,7 +106,8 @@ php artisan app:hash [-T] [-m method...] [-r reference] [path...] # compute osha
   `indexed_file_texts` chunks; status in `ExtractedTextStatus`. Admin debug: `?_debug_ocr` on an image URL.
 - `SearchScenesInStashBoxJob`: phash lookup against StashDB GraphQL (`config/stashbox.php`, `STASHDB_API_KEY`;
   schema in `stashdb.graphql`), populates `stash_*` tables. Not wired to any command/schedule — dispatched manually.
-  Placeholder `stash_scene_id` 0000… UUID marks "claimed/no match".
+  It searches for `FileFingerprint`s (not files) that have a phash, a video file and no `stash_searched_at`, and stores
+  the scene on the fingerprint; `stash_searched_at` set with no scene marks "claimed/no match".
 
 ### Search (`SearchController`)
 - Laravel Scout + TNTSearch (MySQL engine); custom `tntsearch_stemmed` engine (Porter) registered in
@@ -117,9 +123,9 @@ php artisan app:hash [-T] [-m method...] [-r reference] [path...] # compute osha
 
 ### Models / data
 `IndexedDirectory` (self-referential tree via `parent_id`, unique `path`), `IndexedFile` (inode, mtime, size, kind,
-mime, `media_info`, `oshash`, `phash`, thumbnail/filmstrip uuids, `stash_scene_id`), `IndexedFileText`,
+mime, `media_info`, thumbnail/filmstrip uuids, `fingerprint_id`), `FileFingerprint`, `IndexedFileText`,
 `Stash{Scene,Performer,Studio,Tag,TagCategory}`, `AccessControlEntry`, `User`. Custom casts in `app/Casts`
-(`AsMediaInfo`, `BinaryToHex`, `Compressed`). Migrations are hand-maintained; latest is the Laravel 13 update.
+(`AsMediaInfo`, `BinaryToHex`, `Compressed`). Migrations are hand-maintained; latest moves the hashes and scene match into `file_fingerprints`.
 
 ## Environment
 

@@ -46,6 +46,16 @@ class IndexFileJob implements ShouldQueue
             $this->fileEntry->updateWithInfo($fileInfo);
         }
 
+        // What we know from the contents alone belongs to the fingerprint, so is already there for contents we've
+        // seen before (a file that was moved, copied, or deleted and recreated by the index). The searchable text
+        // for its scene belongs to the file though, so needs writing again.
+        $this->fileEntry->load('fingerprint.stashScene');
+        $fingerprint = $this->fileEntry->fingerprint;
+
+        if ($fingerprint->stashScene !== null && $this->fileEntry->kind === MediaContentKind::Video && $this->fileEntry->extractedText()->doesntExist()) {
+            $this->fileEntry->writeSceneText($fingerprint->stashScene);
+        }
+
         // TODO: Consider moving this into IndexedFile so it can be close to the requiresGeneration() logic.
         // TODO: See event note in \App\Models\IndexedFile::updateWithInfo
 
@@ -63,7 +73,7 @@ class IndexFileJob implements ShouldQueue
             $generationJobs[] = (new GenerateMediaFileFilmstripJob($this->fileEntry, $this->path, $this->parentDirectory->video_thumbnail_time ?? 15_000))->onQueue('index');
         }
 
-        if ($this->fileEntry->kind->canPerceptualHash() && $this->fileEntry->phash === null) {
+        if ($this->fileEntry->kind->canPerceptualHash() && $fingerprint->phash === null) {
             $generationJobs[] = (new GenerateMediaFilePerceptualHashJob($this->fileEntry, $this->path))->onQueue('index');
         }
 
