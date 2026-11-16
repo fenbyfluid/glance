@@ -51,8 +51,8 @@
                     <div class="contents">
                         <template x-if="$store.searchModal.open">
                             <div x-data="{ top: window.scrollY, height: window.innerHeight, overscan: 120 }" x-on:resize.window="height = window.innerHeight" x-bind:style="{ top: top + 'px', height: (height + overscan) + 'px', '--search-overscan': overscan + 'px' }" class="absolute left-0 right-0 z-10 flex flex-col items-center overflow-y-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] safe-area-x">
-                                <div x-on:click.prevent="$store.searchModal.open = false" x-bind:style="{ top: -overscan + 'px', height: (height / 2 + overscan) + 'px' }" class="fixed inset-x-0 bg-gray-900/20"></div>
-                                <div x-on:click.prevent="$store.searchModal.open = false" x-bind:style="{ top: (height / 2) + 'px' }" class="absolute inset-x-0 bottom-0 bg-gray-900/20"></div>
+                                <div x-on:click.prevent="$store.searchModal.open = false" x-bind:style="{ top: -overscan + 'px', height: (height / 2 + overscan) + 'px' }" class="fixed inset-x-0 bg-black/72"></div>
+                                <div x-on:click.prevent="$store.searchModal.open = false" x-bind:style="{ top: (height / 2) + 'px' }" class="absolute inset-x-0 bottom-0 bg-black/72"></div>
                                 <div class="px-4 w-full sm:w-xl mt-4 z-10 overflow-y-hidden pointer-events-none">
                                     @include('search.partials.search-form')
                                 </div>
