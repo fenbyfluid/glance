@@ -37,12 +37,27 @@
                         <path fill-rule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
                     </svg>
                 </a>
-                <template x-if="$store.searchModal.open">
-                    <div class="fixed top-0 left-0 right-0 bottom-0 z-10 flex flex-col items-center overflow-y-hidden">
-                        <div x-on:click.prevent="$store.searchModal.open = false" class="fixed top-0 left-0 right-0 bottom-0 bg-gray-900 opacity-20"></div>
-                        <div class="px-4 w-full sm:w-xl mt-4 z-10 overflow-y-hidden pointer-events-none">
-                            @include('search.partials.search-form')
-                        </div>
+                {{-- Safari fills the area behind its toolbar with a solid colour while a fixed element reaches the
+                     bottom of the screen, which hid the search results there. So the overlay isn't fixed: it's moved to
+                     the body and placed over the viewport at the current scroll position (the page doesn't scroll while
+                     search is open, see layouts.app). Only the top half of the backdrop is fixed, which Safari tints its
+                     status bar from. Sizes come from innerHeight, as the CSS viewport units didn't match each other or
+                     the visible area on iOS 26, leaving undimmed gaps. innerHeight stops at the top of Safari's toolbar,
+                     so the overlay overshoots it by --search-overscan (past the bottom of the screen, where it isn't
+                     seen), and the results get the same bottom padding so the last one still scrolls clear of the
+                     toolbar. The backdrop overshoots the top too, where the page shows through the status bar once
+                     Safari collapses its toolbar on scrolling. --}}
+                <template x-teleport="body">
+                    <div class="contents">
+                        <template x-if="$store.searchModal.open">
+                            <div x-data="{ top: window.scrollY, height: window.innerHeight, overscan: 120 }" x-on:resize.window="height = window.innerHeight" x-bind:style="{ top: top + 'px', height: (height + overscan) + 'px', '--search-overscan': overscan + 'px' }" class="absolute left-0 right-0 z-10 flex flex-col items-center overflow-y-hidden pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] safe-area-x">
+                                <div x-on:click.prevent="$store.searchModal.open = false" x-bind:style="{ top: -overscan + 'px', height: (height / 2 + overscan) + 'px' }" class="fixed inset-x-0 bg-gray-900/20"></div>
+                                <div x-on:click.prevent="$store.searchModal.open = false" x-bind:style="{ top: (height / 2) + 'px' }" class="absolute inset-x-0 bottom-0 bg-gray-900/20"></div>
+                                <div class="px-4 w-full sm:w-xl mt-4 z-10 overflow-y-hidden pointer-events-none">
+                                    @include('search.partials.search-form')
+                                </div>
+                            </div>
+                        </template>
                     </div>
                 </template>
             </div>

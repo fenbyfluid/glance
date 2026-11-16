@@ -1,5 +1,56 @@
 @import '@fancyapps/fancybox';
 
+/* Safari tints its status bar and toolbar from the background colour of fixed elements at the screen edges. It only
+   samples when one appears, doesn't look at .fancybox-bg (absolutely positioned inside the fixed container), and
+   caught a fixed, fading backdrop part-way into its fade. So while the lightbox is open, a separate full-strength
+   fixed layer gives Safari its colour, hidden behind the page (the page wrapper's background covers it), and
+   .fancybox-bg keeps doing upstream's fade on top.
+   Safari blends a translucent colour into its bars only up to some alpha (between 0.72 and 0.79 on iOS 26), and
+   treats anything more opaque as solid, which made the bars much darker than upstream's rgb(30 30 30 / 0.9). So the
+   backdrop is the darkest black that still blends, a little lighter than upstream over the page.
+   Safari also fills the area behind its (otherwise see-through) toolbar with a solid colour while a fixed element
+   reaches the bottom of the screen. So the layer only covers the top half, and the container isn't fixed: it's placed
+   at the current scroll position when it opens (media.js) and the page doesn't scroll meanwhile. Its height: 100% still
+   stops at the top of Safari's toolbar, so the backdrop overshoots it to dim what shows through the toolbar, and
+   likewise at the top, where the page shows through the status bar once Safari collapses its toolbar on scrolling. */
+.fancybox-active::before {
+    background: rgb(0 0 0 / 0.72);
+    content: '';
+    height: 50%;
+    inset: 0 0 auto;
+    position: fixed;
+    z-index: -1;
+}
+
+html:has(> body.fancybox-active) {
+    overflow: hidden;
+}
+
+.fancybox-container {
+    position: absolute;
+}
+
+.fancybox-bg {
+    background: rgb(0 0 0);
+    bottom: -120px;
+    top: -120px;
+}
+
+.fancybox-is-open .fancybox-bg {
+    opacity: 0.72;
+}
+
+/* Upstream insets the arrows and caption for the notch / Dynamic Island and home indicator, but not these. */
+.fancybox-infobar {
+    left: env(safe-area-inset-left);
+    top: env(safe-area-inset-top);
+}
+
+.fancybox-toolbar {
+    right: env(safe-area-inset-right);
+    top: env(safe-area-inset-top);
+}
+
 .fancybox-share__input {
     width: 40rem;
 }

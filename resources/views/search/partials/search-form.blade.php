@@ -45,7 +45,7 @@
          sized to its content (min-h-0 lets it shrink to fit) rather than growing to fill the modal, so the empty
          area below the results doesn't swallow clicks meant for the backdrop. --}}
     <div class="min-h-0 overflow-y-auto overscroll-contain rounded-t-lg pointer-events-auto transition-opacity" :class="loading && 'opacity-60'">
-        <div class="space-y-3">
+        <div class="space-y-3 pb-(--search-overscan)">
             <template x-for="result in results" :key="result.link">
                 <a :href="result.link" class="p-2 sm:p-4 bg-white dark:bg-gray-800 shadow-sm rounded-lg flex gap-2 sm:gap-3 pointer-events-auto">
                     <div class="shrink-0 grow-0 overflow-hidden w-[160px] h-[90px] rounded-sm bg-black flex justify-center items-center">

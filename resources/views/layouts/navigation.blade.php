@@ -1,5 +1,5 @@
 <nav x-data="{ open: false }" @class([
-    'bg-white dark:bg-gray-800' => true,
+    'bg-white dark:bg-gray-800 pt-[env(safe-area-inset-top)] safe-area-x' => true,
     'border-b border-gray-100 dark:border-gray-700' => isset($header),
     'shadow-sm' => !isset($header),
 ])>

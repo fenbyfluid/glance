@@ -5,3 +5,11 @@
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
+
+/* With viewport-fit=cover, iOS lays the page out under the notch / Dynamic Island in landscape. Full-width elements
+   keep their background edge to edge and use this to inset their contents. Explicit left/right (not padding-inline)
+   because the insets are physical. */
+@utility safe-area-x {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+}

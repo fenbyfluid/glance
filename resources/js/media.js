@@ -77,6 +77,16 @@ $.fancybox.defaults = {
         // Disable key handlers as they clash with system commands.
         $(document).off('afterKeydown.fb');
 
+        // The container isn't fixed so Safari keeps its toolbar see-through (see media.css), so place it over the
+        // viewport. The page doesn't scroll while it's open. Its height: 100% would be the initial viewport, which
+        // excludes Safari's bars even once they've been hidden by scrolling, so size it to what's visible instead.
+        const fitToViewport = function() {
+            instance.$refs.container.css({ top: window.scrollY + 'px', height: window.innerHeight + 'px' });
+        };
+
+        fitToViewport();
+        $(window).on('resize.glanceFit', fitToViewport);
+
         // Avoid stripping out all but the first child of ajax-loaded HTML, add white-space CSS for plain text.
         const originalSetContent = instance.setContent;
         instance.setContent = function(slide, content) {
@@ -117,6 +127,9 @@ $.fancybox.defaults = {
 
             return originalSetContent.call(this, slide, content);
         };
+    },
+    afterClose: function() {
+        $(window).off('resize.glanceFit');
     },
     beforeLoad: function(instance, current) {
         logFancyboxState('beforeLoad', current);
