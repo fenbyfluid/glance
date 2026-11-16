@@ -1,7 +1,9 @@
 <form x-data="{{ Js::from([ 'name' => route('search.name'), 'content' => route('search.content'), 'epoch' => 0, 'loading' => false, 'overheated' => false, 'results' => [] ]) }}" x-on:submit.prevent="performSearch" class="space-y-3 h-full flex flex-col">
     <div>
         <label for="query" class="block sr-only">{{ __('Search Query') }}</label>
-        <div class="flex items-center rounded-t-lg bg-white dark:bg-gray-800 px-2 sm:px-4 py-1 sm:py-2 shadow-sm has-[input:focus-within]:outline-2 has-[input:focus-within]:-outline-offset-2 has-[input:focus-within]:outline-indigo-600 pointer-events-auto">
+        {{-- Fixed height so the box's bottom edge lines up with the bottom of the navigation bar: the search modal's
+             mt-4 offset plus h-12 equals the nav's h-16. The input has py-0 so its own padding can't stretch it. --}}
+        <div class="flex items-center h-12 rounded-t-lg bg-white dark:bg-gray-800 px-2 sm:px-4 shadow-sm has-[input:focus-within]:outline-2 has-[input:focus-within]:-outline-offset-2 has-[input:focus-within]:outline-indigo-600 pointer-events-auto">
             <svg x-show="!loading" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6 shrink-0 text-base text-gray-400 select-none sm:text-sm/6">
                 <path fill-rule="evenodd" d="M10.5 3.75a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM2.25 10.5a8.25 8.25 0 1 1 14.59 5.28l4.69 4.69a.75.75 0 1 1-1.06 1.06l-4.69-4.69A8.25 8.25 0 0 1 2.25 10.5Z" clip-rule="evenodd" />
             </svg>
@@ -9,7 +11,7 @@
                 <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" class="opacity-25" />
                 <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
             </svg>
-            <input id="query" type="text" name="query" placeholder="" autofocus x-on:input.debounce="$event.target.form.requestSubmit()" class="block rounded-lg min-w-0 grow pl-2 text-base text-gray-900 dark:text-gray-100 dark:bg-gray-800 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:ring-0 sm:text-sm/6 border-none" />
+            <input id="query" type="text" name="query" placeholder="" autofocus x-on:input.debounce="$event.target.form.requestSubmit()" class="block rounded-lg min-w-0 grow pl-2 py-0 text-base text-gray-900 dark:text-gray-100 dark:bg-gray-800 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:ring-0 sm:text-sm/6 border-none" />
         </div>
         <div x-on:change="$event.target.form.requestSubmit()" class="p-2 sm:px-4 bg-white dark:bg-gray-800 rounded-b-lg border-t border-gray-300 dark:border-gray-700 shadow-sm flex justify-between gap-4 sm:gap-8 pointer-events-auto">
             <div class="flex flex-col gap-1">

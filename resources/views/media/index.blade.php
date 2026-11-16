@@ -40,7 +40,7 @@
                 <template x-if="$store.searchModal.open">
                     <div class="fixed top-0 left-0 right-0 bottom-0 z-10 flex flex-col items-center overflow-y-hidden">
                         <div x-on:click.prevent="$store.searchModal.open = false" class="fixed top-0 left-0 right-0 bottom-0 bg-gray-900 opacity-20"></div>
-                        <div class="px-4 w-full sm:w-xl mt-1 z-10 overflow-y-hidden pointer-events-none">
+                        <div class="px-4 w-full sm:w-xl mt-4 z-10 overflow-y-hidden pointer-events-none">
                             @include('search.partials.search-form')
                         </div>
                     </div>
