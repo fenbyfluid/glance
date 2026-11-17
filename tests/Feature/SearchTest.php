@@ -66,6 +66,7 @@ class SearchTest extends TestCase
 
         $this->assertFalse($response->json('overheated'));
         $this->assertSame(['a.txt', 'b.txt'], $this->resultNames($response->json('results')));
+        $this->assertSame(media_info_url('Inside/a.txt'), array_column($response->json('results'), 'link', 'name')['a.txt']);
     }
 
     public function test_content_search_only_returns_accessible_files(): void
@@ -156,6 +157,11 @@ class SearchTest extends TestCase
         $response = $this->actingAs($user)->getJson('/_search/name/needle')->assertOk();
         $this->assertFalse($response->json('overheated'));
         $this->assertSame(['needle-dir', 'needle-visible.txt'], $this->resultNames($response->json('results')));
+
+        // Files link to their info page, directories to their listing.
+        $links = array_column($response->json('results'), 'link', 'name');
+        $this->assertSame('/Allowed/needle-dir/', $links['needle-dir']);
+        $this->assertSame(media_info_url('Allowed/needle-visible.txt'), $links['needle-visible.txt']);
 
         // The directory being searched within is not itself a result.
         $response = $this->actingAs($user)->getJson('/_search/name/needle?path=Allowed/needle-dir')->assertOk();

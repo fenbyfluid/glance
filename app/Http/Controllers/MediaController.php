@@ -3,12 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\ImageExtractionIncompleteException;
+use App\Jobs\ExtractTextJob;
 use App\Jobs\IndexDirectoryJob;
+use App\Media\FileDetails;
 use App\Media\GroupedMediaPaginator;
 use App\Media\MediaContentKind;
 use App\Media\Sources\DirectorySource;
 use App\Media\TranscodeManager;
 use App\Models\IndexedDirectory;
+use App\Models\IndexedFile;
 use App\Models\User;
 use App\Utilities\Path;
 use Illuminate\Bus\BatchRepository;
@@ -151,6 +154,65 @@ class MediaController extends Controller
         ]);
     }
 
+    public function info(Request $request, string $unsafePath = ''): View
+    {
+        $path = Path::resolve($unsafePath);
+
+        $user = $request->user();
+        $accessControlOverrideUser = User::getAccessControlOverrideUser($request);
+        $accessControlInfo = ($accessControlOverrideUser ?? $user)->getPathAccessInfo($path);
+        if (!$accessControlInfo['']) {
+            abort(404);
+        }
+
+        $filesystemPath = config('media.path').'/'.$path;
+
+        // TODO: Directories could have an info page too (size, counts, README), but there's nothing to play.
+        $pathInfo = new \SplFileInfo($filesystemPath);
+        if (!$pathInfo->isFile()) {
+            abort(404);
+        }
+
+        $this->ensurePathCanonical($request, false);
+
+        // TODO: Files that aren't in the index yet only get what the filesystem tells us. We could dispatch an
+        //       IndexDirectoryJob for the parent like index() does, but the page is still useful without it.
+        $directoryPath = str_contains($path, '/') ? dirname($path) : '';
+        $fileEntry = IndexedFile::query()
+            ->whereRelation('directory', 'path', $directoryPath)
+            ->where('name', basename($path))
+            ->with([
+                'extractedText',
+                'fingerprint.stashScene.studio.parentStudio.parentStudio',
+                'fingerprint.stashScene.performers',
+                'fingerprint.stashScene.tags',
+            ])
+            ->first();
+
+        // The index can lag behind the filesystem, in which case what we generated is for the old contents.
+        if ($fileEntry?->isIndexOutdated($pathInfo)) {
+            $fileEntry = null;
+        }
+
+        $details = new FileDetails($pathInfo, $fileEntry);
+
+        $scene = $fileEntry?->fingerprint?->stashScene;
+
+        // A matched scene's description is stored as the file's text for searching, so it'd only repeat it.
+        $extractedText = ($scene === null) ? $fileEntry?->extractedText->sortBy('id')->pluck('text')->implode("\n\n") : null;
+
+        return view('media.info', [
+            'path' => $path,
+            'breadcrumbs' => $this->getCrumbsForPath($path),
+            'fileUrl' => media_url($path),
+            'details' => $details,
+            'file' => $fileEntry,
+            'scene' => $scene,
+            'extractedText' => ($extractedText !== '') ? $extractedText : null,
+            'accessControlOverrideUser' => $accessControlOverrideUser,
+        ]);
+    }
+
     public function stream(Request $request, string $unsafePath = ''): Response
     {
         $path = Path::resolve($unsafePath);
@@ -206,7 +268,7 @@ class MediaController extends Controller
     public function handleHttpException(Request $request, HttpException $exception): ?Response
     {
         $route = $request->route();
-        if ($route?->getActionName() !== __CLASS__.'@index') {
+        if (!in_array($route?->getActionName(), [__CLASS__.'@index', __CLASS__.'@info'], true)) {
             return null;
         }
 
@@ -325,7 +387,7 @@ class MediaController extends Controller
             try {
                 $eventName = sprintf('Extract Text Boxes (%d)', $imageExtractionState['offset'] ?? 0);
                 $spans = app('clockwork')->event($eventName)->run(function () use ($path, $imageExtractionState) {
-                    return \App\Jobs\ExtractTextJob::extractTextBoxes($path, $imageExtractionState);
+                    return ExtractTextJob::extractTextBoxes($path, $imageExtractionState);
                 });
 
                 $imageExtractionState = null;
@@ -335,7 +397,7 @@ class MediaController extends Controller
         } while ($imageExtractionState !== null);
 
         $imageData = app('clockwork')->event('Visualize Text Boxes')->run(function () use ($path, $spans) {
-            $image = \App\Jobs\ExtractTextJob::visualizeTextBoxes($path, $spans);
+            $image = ExtractTextJob::visualizeTextBoxes($path, $spans);
 
             return $image->pngsave_buffer();
         });
@@ -347,7 +409,7 @@ class MediaController extends Controller
         }
 
         $altText = app('clockwork')->event('Extract Text From Boxes')->run(function () use ($spans) {
-            $text = \App\Jobs\ExtractTextJob::extractTextFromBoxes($spans);
+            $text = ExtractTextJob::extractTextFromBoxes($spans);
 
             return htmlspecialchars($text, ENT_QUOTES | ENT_HTML5);
         });

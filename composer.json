@@ -10,6 +10,7 @@
         "ext-enchant": "*",
         "ext-fileinfo": "*",
         "ext-gd": "*",
+        "ext-intl": "*",
         "ext-zlib": "*",
         "itsgoingd/clockwork": "^5.3",
         "jcupitt/vips": "^2.5",

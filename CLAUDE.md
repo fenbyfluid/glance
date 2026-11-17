@@ -22,7 +22,7 @@ notes (DB caching plan, metadata/search ideas) live in `README.md`; read it befo
 ## Commands
 
 ```bash
-php artisan test                      # PHPUnit (97 tests, ~2s); sqlite :memory:, sync queue, MEDIA_PATH=resources/test-media
+php artisan test                      # PHPUnit (106 tests, ~3s); sqlite :memory:, sync queue, MEDIA_PATH=resources/test-media
 php artisan test --filter=PathTest
 vendor/bin/pint path/to/File.php      # format only files you touched (see Style)
 composer dev                          # serve + queue:listen + pail + vite
@@ -36,9 +36,13 @@ php artisan app:hash [-T] [-m method...] [-r reference] [path...] # compute osha
 
 ## Style
 
-- Pint `laravel` preset with `not_operator_with_successor_space: false` → write `!$x`, not `! $x`.
-- **`pint --test` currently fails on ~16 pre-existing files** (`fully_qualified_strict_types`, `ordered_imports`, from
-  a newer Pint). Don't run Pint repo-wide or let it rewrite unrelated code in a file; ask before a mass fix.
+- Pint `laravel` preset with `not_operator_with_successor_space: false` → write `!$x`, not `! $x`; trailing commas
+  on multiline arrays, arguments, parameters and `match` arms.
+- **Every PHP file a change touches must pass Pint**, including errors that were already there (whole-file fixes
+  are fine). `pint --test` still fails on a dozen or so untouched files (`fully_qualified_strict_types`,
+  `ordered_imports` from a newer Pint, trailing commas from the newer rule): don't run Pint repo-wide; ask before a
+  mass fix. For a file with the user's unstaged WIP, run Pint on the staged blob too and check the WIP hunks survive.
+- Code is written in US English (`color`, `normalize`, `behavior`).
 - Code inlines FQCNs like `\App\Jobs\ExtractTextJob::…` and `\SplFileInfo` in places — fine to match.
 - Lots of explanatory `// TODO:` comments documenting known trade-offs and future plans; keep and extend that habit
   rather than deleting them.
@@ -64,6 +68,12 @@ php artisan app:hash [-T] [-m method...] [-r reference] [path...] # compute osha
 - `HttpException`s are rendered by `MediaController::handleHttpException` (`bootstrap/app.php`).
 - `/_stream/{file}.m3u8[/{n}.ts]` → `Media\TranscodeManager`/`MediaTranscode`: live FFmpeg HLS transcode per
   session+file, coordinated with cache locks (no B-frames — Chrome native HLS needs DTS order).
+- `/_info/{file}` (`media_info_url()`) → `media.info`: player on the right, sidebar of `Media\FileDetails` sections
+  (filesystem + `media_info` + fingerprints) and the matched StashDB scene. Works for unindexed files (filesystem only)
+  and ignores an index entry that's outdated. Reached from the lightbox's info button (tiles carry `data-info-url`;
+  a playing video's position is passed as `#t=<s>`), and is what the lightbox's share button links to.
+- Frontend: `resources/js/player.js` holds what the lightbox (`media.js`) and info page (`info.js`) share: direct
+  playback with the HLS fallback (`playVideoWithFallback()` returns a destroy function) and text/HTML rendering.
 
 ### Access control (security-critical)
 - `AccessControlEntry` (path + users pivot). `User::getPathAccessInfo($path)` returns
@@ -132,7 +142,8 @@ mime, `media_info`, thumbnail/filmstrip uuids, `fingerprint_id`), `FileFingerpri
 
 ## Environment
 
-- Dev: macOS, Homebrew PHP 8.4, ffmpeg/ffprobe on PATH. Required PHP exts: dom, enchant, fileinfo, gd, zlib, ffi (vips).
+- Dev: macOS, Homebrew PHP 8.4, ffmpeg/ffprobe on PATH. Required PHP exts: dom, enchant, fileinfo, gd, intl
+  (`Number` formatting), zlib, ffi (vips). Tests needing intl are marked `#[RequiresPhpExtension('intl')]`.
 - Prod: Fedora, Nginx + PHP as `apache`, MariaDB, Valkey, systemd units in `deployment/` (Horizon + scheduler timer),
   FFmpeg with CUDA filters. Paths like `/usr/bin/tesseract` are prod-absolute; tests fake `Process`.
 - Clockwork profiler is wired in (`app('clockwork')->event(...)->run(...)` around expensive steps).

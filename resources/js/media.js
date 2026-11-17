@@ -7,64 +7,40 @@ import '../css/media.css';
 
 import $ from './jquery-global.js';
 import '@fancyapps/fancybox';
+import { playVideoWithFallback, renderTextContent } from './player.js';
 
-function logFancyboxState(label, current) {
-    console.log(label, (current !== undefined) ? JSON.parse(JSON.stringify(current, (k, v) => (v && k.startsWith('$')) ? v.prop('outerHTML') : v)) : current);
-}
+/**
+ * The info page for a slide's file, with the video's current position when it's playing (so it carries on there).
+ */
+function getInfoUrl(slide, withCurrentTime = false) {
+    const infoUrl = slide.opts.$orig?.attr('data-info-url');
+    if (!infoUrl) {
+        return null;
+    }
 
-const HLS_MEDIA_MIME_TYPE = 'video/mp4; codecs="avc1.64001f, mp4a.40.2"';
+    const url = new URL(infoUrl, window.location.href);
 
-function getHlsStreamUrl(src) {
-    const url = new URL(src, window.location.href);
-
-    // TODO: Use a named route somehow, account for the base path.
-    url.pathname = '/_stream' + url.pathname + '.m3u8';
+    const video = (withCurrentTime && slide.type === 'video') ? slide.$slide?.find('video').get(0) : null;
+    if (video && video.currentTime > 0) {
+        url.hash = 't=' + Math.floor(video.currentTime);
+    }
 
     return url.href;
 }
 
-async function startHlsVideo(element, hlsUrl) {
-    const { Hls } = await import('hls.js/light');
+/**
+ * The URL as reached from outside: on the local network we're redirected to a `-local` hostname, which won't resolve
+ * for anyone else (see RedirectLocalAccess::getExternalHostIfLocal()).
+ */
+function toPublicUrl(href) {
+    const url = new URL(href);
+    url.hostname = url.hostname.replace(/^([^.]+)-local\./, '$1.');
 
-    if (!Hls.isMSESupported() || !Hls.getMediaSource().isTypeSupported(HLS_MEDIA_MIME_TYPE)) {
-        return;
-    }
+    return url.href;
+}
 
-    const hls = new Hls({
-        // debug: true,
-        backBufferLength: 90,
-    });
-
-    hls.on(Hls.Events.ERROR, function(event, data) {
-        console.log('hls.js error', data);
-
-        if (!data.fatal) {
-            return;
-        }
-
-        switch (data.type) {
-            case Hls.ErrorTypes.MEDIA_ERROR:
-                console.log('fatal media error encountered, try to recover');
-                hls.recoverMediaError();
-                break;
-            case Hls.ErrorTypes.NETWORK_ERROR:
-                console.error('fatal network error encountered', data);
-                // All retries and media options have been exhausted.
-                // Immediately trying to restart loading could cause loop loading.
-                // Consider modifying loading policies to best fit your asset and network
-                // conditions (manifestLoadPolicy, playlistLoadPolicy, fragLoadPolicy).
-                break;
-            default:
-                // cannot recover
-                hls.destroy();
-                break;
-        }
-    });
-
-    hls.loadSource(hlsUrl);
-    hls.attachMedia(element);
-
-    return hls;
+function logFancyboxState(label, current) {
+    console.log(label, (current !== undefined) ? JSON.parse(JSON.stringify(current, (k, v) => (v && k.startsWith('$')) ? v.prop('outerHTML') : v)) : current);
 }
 
 // TODO: The `thumbs` button loads all of the thumbnails on the page, work out how to make it lazy.
@@ -96,26 +72,10 @@ $.fancybox.defaults = {
 
             const contentKind = slide.opts.$orig?.attr('data-kind');
 
-            if (contentKind === 'text') {
+            if (contentKind === 'text' || contentKind === 'html') {
                 slide.opts.touch = false;
 
-                content = $('<div class="prose" style="white-space: pre-wrap;"></div>')
-                    .text(content)
-                    .wrap('<div></div>')
-                    .parent();
-            } else if (contentKind === 'html') {
-                slide.opts.touch = false;
-
-                // TODO: Like the Readme rendering, this requires trusted HTML.
-                //       We'd ideally like to filter it to safe Markdown elements and no attributes.
-                content = $('<div class="prose"></div>')
-                    .html(content)
-                    .wrap('<div></div>')
-                    .parent();
-
-                if (content.find('style').remove().length > 0) {
-                    console.warn('HTML content contained style tags, they will be ignored.');
-                }
+                content = renderTextContent(contentKind, content);
             } else if (contentKind === 'audio') {
                 slide.type = 'ajax';
                 slide.contentType = 'html';
@@ -154,64 +114,35 @@ $.fancybox.defaults = {
         logFancyboxState('afterShow', current);
 
         if (current.type === 'video') {
-            const element = current.$slide.find('video').get(0);
-
-            let fallbackStarted = false;
-            let slideReset = false;
-            let hlsInstance = null;
-
-            const startFallback = function() {
-                if (fallbackStarted) {
-                    return;
-                }
-
-                fallbackStarted = true;
-
-                startHlsVideo(element, getHlsStreamUrl(current.src)).then(hls => {
-                    if (!hls) {
-                        return;
-                    }
-
-                    if (slideReset) {
-                        hls.destroy();
-                        return;
-                    }
-
-                    hlsInstance = hls;
-                });
-            };
-
-            // Source load failures fire `error` on the <source> element, which doesn't bubble, so capture it on the video.
-            // Once the last source has failed, networkState is NETWORK_NO_SOURCE.
-            const onSourceError = function() {
-                if (element.networkState === HTMLMediaElement.NETWORK_NO_SOURCE) {
-                    element.removeEventListener('error', onSourceError, true);
-                    startFallback();
-                }
-            };
+            const destroy = playVideoWithFallback(current.$slide.find('video').get(0), current.src);
 
             current.$slide.on('onReset', function () {
                 console.log('onReset');
-                slideReset = true;
-                element.removeEventListener('error', onSourceError, true);
-                hlsInstance?.destroy();
-                hlsInstance = null;
+                destroy();
             });
-
-            if (element.networkState === HTMLMediaElement.NETWORK_NO_SOURCE) {
-                startFallback();
-            } else {
-                element.addEventListener('error', onSourceError, true);
-            }
         }
+    },
+    beforeShow: function(instance, current) {
+        // Like upstream's download button, the info button is a link to the current slide's file, so it can be opened
+        // in a new tab. Its position in a playing video is added when it's clicked.
+        const infoUrl = getInfoUrl(current);
+
+        instance.$refs.container.find('[data-fancybox-info]')
+            .attr('href', infoUrl ?? 'javascript:;')
+            .toggle(infoUrl !== null);
+    },
+    btnTpl: {
+        ...$.fancybox.defaults.btnTpl,
+        info: '<a data-fancybox-info class="fancybox-button fancybox-button--info" title="Info" href="javascript:;">' +
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 1.5a7.5 7.5 0 1 1 0 15 7.5 7.5 0 0 1 0-15ZM11.1 10.5h1.8v6h-1.8ZM12 6.9a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2Z"/></svg>' +
+            '</a>',
     },
     share: {
         ...$.fancybox.defaults.share,
         url: function(instance, item) {
-             // console.log('share', item);
-
-            // TODO: If we enable this button, we'll want to hook it into our own share function for permissions.
-            return item.src;
+            // TODO: This is only a link for users who already have access, we'll want our own share function for
+            //       public links (see the project plan).
+            return toPublicUrl(getInfoUrl(item, true) ?? new URL(item.src, window.location.href).href);
         },
         tpl: `<div class="fancybox-share"><input class="fancybox-share__input" type="text" value="{{url_raw}}" onclick="select()" /></div>`,
     },
@@ -221,7 +152,7 @@ $.fancybox.defaults = {
 
         // TODO
     },
-    buttons: ['download', 'share', 'thumbs', 'close'],
+    buttons: ['info', 'download', 'share', 'thumbs', 'close'],
     smallBtn: false,
     wheel: false,
     defaultType: 'iframe',
@@ -235,6 +166,17 @@ $.fancybox.defaults = {
       autoStart: false,
     },
 };
+
+// Adds the playing video's position to the info link as it's followed. On mousedown too, which comes before the
+// browser reads the link for a middle-click or context menu.
+$(document).on('mousedown click', '[data-fancybox-info]', function() {
+    const instance = $.fancybox.getInstance();
+    const infoUrl = instance?.current ? getInfoUrl(instance.current, true) : null;
+
+    if (infoUrl) {
+        this.href = infoUrl;
+    }
+});
 
 document.addEventListener('DOMContentLoaded', function() {
     /**

@@ -9,7 +9,7 @@
         <link rel="mask-icon" href="{{ asset('safari-pinned-tab.svg') }}" color="#6b7280">
         <link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}">
 
-        <title>{{ config('app.name', 'Laravel') }}</title>
+        <title>@isset($title){{ $title }} – @endisset{{ config('app.name', 'Laravel') }}</title>
 
         @vite('resources/js/app.js')
 

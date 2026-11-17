@@ -38,6 +38,10 @@ Route::middleware(['auth', 'activated'])->group(function () {
         Route::get('/content/{query?}', [SearchController::class, 'content'])->name('content');
     });
 
+    Route::get('/_info/{path?}', [MediaController::class, 'info'])
+        ->where('path', '.*')
+        ->name('media.info');
+
     Route::get('/_stream/{path?}', [MediaController::class, 'stream'])
         ->where('path', '.*')
         ->name('media.stream');

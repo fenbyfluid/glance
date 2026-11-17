@@ -13,6 +13,7 @@ export default defineConfig({
             input: [
                 'resources/js/app.js',
                 'resources/js/media.js',
+                'resources/js/info.js',
             ],
             refresh: true,
         }),

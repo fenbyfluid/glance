@@ -19,6 +19,9 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Laravel\Scout;
+use TeamTNT\Scout\Engines\TNTSearchEngine;
+use TeamTNT\TNTSearch\Stemmer\PorterStemmer;
+use TeamTNT\TNTSearch\Support\Highlighter;
 use TeamTNT\TNTSearch\Tokenizer\NGramTokenizer;
 
 class SearchController extends Controller
@@ -108,7 +111,7 @@ class SearchController extends Controller
                         'name' => $result->name,
                         'path' => $result->directory->path,
                         'thumbnail' => $result->thumbnail,
-                        'link' => '/'.$result->__path__,
+                        'link' => media_info_url($result->__path__),
                         'score' => $result->__tntSearchScore__,
                     ],
                 };
@@ -143,8 +146,8 @@ class SearchController extends Controller
             ], $pathPrefix, 20);
         });
 
-        $highlighter = new \TeamTNT\TNTSearch\Support\Highlighter;
-        $stemmedQuery = (new \TeamTNT\TNTSearch\Stemmer\PorterStemmer)->stem($query);
+        $highlighter = new Highlighter;
+        $stemmedQuery = (new PorterStemmer)->stem($query);
 
         return [
             'overheated' => $searchOverheated,
@@ -159,7 +162,7 @@ class SearchController extends Controller
                     'path' => $result->file->directory->path,
                     'thumbnail' => $result->file->thumbnail,
                     'text' => $shortText,
-                    'link' => '/'.$result->__path__,
+                    'link' => media_info_url($result->__path__),
                     'score' => $result->__tntSearchScore__,
                 ];
             }),
@@ -263,7 +266,7 @@ class SearchController extends Controller
             // We check the type as our hackery probably doesn't work with any other engines.
 
             $engine = $builder->model->searchableUsing();
-            if (!($engine instanceof \TeamTNT\Scout\Engines\TNTSearchEngine)) {
+            if (!($engine instanceof TNTSearchEngine)) {
                 throw new \LogicException('Bad search engine for '.get_class($builder->model));
             }
 
