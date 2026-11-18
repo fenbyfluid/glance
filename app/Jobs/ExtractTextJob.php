@@ -558,7 +558,7 @@ class ExtractTextJob implements ShouldQueue
         //       On one test image, it took nearly 90 seconds, and the output was complete gibberish.
         //       Turns out this occurs when there is no text in the image, so something like EAST is probably the answer.
         $result = Process::timeout(45)->input($temporaryFile)->run([
-            '/usr/bin/tesseract',
+            config('media.tesseract_bin', '/usr/bin/tesseract'),
             $imageInput,
             'stdout',
             '-l', 'eng',
