@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Http\Middleware\RedirectLocalAccess;
+use Database\Factories\UserFactory;
 use Illuminate\Auth\Authenticatable;
 use Illuminate\Contracts\Auth\Access\Authorizable as AuthorizableContract;
 use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
@@ -28,7 +29,7 @@ use Illuminate\Support\Facades\URL;
  */
 class User extends Model implements AuthenticatableContract, AuthorizableContract
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
+    /** @use HasFactory<UserFactory> */
     use Authenticatable, Authorizable, HasFactory, Notifiable;
 
     protected $attributes = [
@@ -87,7 +88,8 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
             },
         ])->get();
 
-        $hasAccess = true;
+        // Nothing is accessible unless a rule grants it, so installs need a root rule.
+        $hasAccess = false;
         $childAccessOverrides = [];
         $pathLength = strlen($path);
 

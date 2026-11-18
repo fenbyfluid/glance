@@ -22,7 +22,7 @@ notes (DB caching plan, metadata/search ideas) live in `README.md`; read it befo
 ## Commands
 
 ```bash
-php artisan test                      # PHPUnit (106 tests, ~3s); sqlite :memory:, sync queue, MEDIA_PATH=resources/test-media
+php artisan test                      # PHPUnit (109 tests, ~3s); sqlite :memory:, sync queue, MEDIA_PATH=resources/test-media
 php artisan test --filter=PathTest
 vendor/bin/pint path/to/File.php      # format only files you touched (see Style)
 composer dev                          # serve + queue:listen + pail + vite
@@ -78,7 +78,8 @@ php artisan app:hash [-T] [-m method...] [-r reference] [path...] # compute osha
 ### Access control (security-critical)
 - `AccessControlEntry` (path + users pivot). `User::getPathAccessInfo($path)` returns
   `['' => bool accessToPath, '<childName>' => bool override, …]`; last matching ancestor rule wins, descendant rules
-  become per-child overrides. Root rule path is `''`.
+  become per-child overrides. Root rule path is `''`. No matching rule ⇒ no access (installs need a root rule; the
+  seeder grants it to its admin).
 - Lists are filtered with the `ScopeHavingAccess` trait (`havingAccess($info)` on `name`). Child names may be numeric →
   PHP int array keys; always `strval` when comparing (past bug).
 - Admins can impersonate for ACL purposes: always use `User::getAccessControlOverrideUser($request) ?? $user`.
@@ -148,4 +149,5 @@ mime, `media_info`, thumbnail/filmstrip uuids, `fingerprint_id`), `FileFingerpri
   FFmpeg with CUDA filters. Paths like `/usr/bin/tesseract` are prod-absolute; tests fake `Process`.
 - Clockwork profiler is wired in (`app('clockwork')->event(...)->run(...)` around expensive steps).
 - Tests: Feature tests seed `indexed_directories` manually for `resources/test-media/valid/child`; use
-  `$this->withoutVite()` and `config(['cache.stores.apc.driver' => 'array'])`. Coverage is thin — add tests with fixes.
+  `$this->withoutVite()` and `config(['cache.stores.apc.driver' => 'array'])`. Users see nothing without a rule: use
+  `TestCase::userWithRootAccess()` / `grantAccess()`. Coverage is thin — add tests with fixes.

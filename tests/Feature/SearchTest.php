@@ -73,9 +73,9 @@ class SearchTest extends TestCase
     {
         $user = User::factory()->create();
         AccessControlEntry::create(['path' => '']);
-        $this->grant($user, 'Allowed');
+        $this->grantAccess($user, 'Allowed');
         AccessControlEntry::create(['path' => 'Allowed/Denied']);
-        $this->grant($user, 'Allowed/Denied/Regranted');
+        $this->grantAccess($user, 'Allowed/Denied/Regranted');
 
         for ($i = 0; $i < 80; $i++) {
             $this->addText('Hidden', "hidden-$i.txt", 'needle needle needle needle');
@@ -116,9 +116,9 @@ class SearchTest extends TestCase
     public function test_content_search_respects_admin_impersonation(): void
     {
         $admin = $this->userWithRootAccess(['is_admin' => true]);
-        $this->grant($admin, 'Allowed');
+        $this->grantAccess($admin, 'Allowed');
         $user = User::factory()->create();
-        $this->grant($user, 'Allowed');
+        $this->grantAccess($user, 'Allowed');
 
         $this->addText('Allowed', 'visible.txt', 'a needle');
         $this->addText('Other', 'other.txt', 'a needle');
@@ -139,7 +139,7 @@ class SearchTest extends TestCase
     {
         $user = User::factory()->create();
         AccessControlEntry::create(['path' => '']);
-        $this->grant($user, 'Allowed');
+        $this->grantAccess($user, 'Allowed');
         AccessControlEntry::create(['path' => 'Allowed/Denied']);
 
         for ($i = 0; $i < 80; $i++) {
@@ -266,19 +266,6 @@ class SearchTest extends TestCase
 
             $class::all()->searchable();
         }
-    }
-
-    private function userWithRootAccess(array $attributes = []): User
-    {
-        $user = User::factory()->create($attributes);
-        $this->grant($user, '');
-
-        return $user;
-    }
-
-    private function grant(User $user, string $path): void
-    {
-        AccessControlEntry::firstOrCreate(['path' => $path])->users()->attach($user);
     }
 
     private function directoryId(string $path): int

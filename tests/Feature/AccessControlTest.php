@@ -14,6 +14,31 @@ class AccessControlTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_paths_without_a_granting_rule_are_inaccessible(): void
+    {
+        $user = User::factory()->create();
+
+        $this->assertSame(['' => false], $user->getPathAccessInfo(''));
+        $this->assertSame(['' => false], $user->getPathAccessInfo('Some/Dir/file.jpg'));
+
+        $other = User::factory()->create();
+        AccessControlEntry::create(['path' => 'Some'])->users()->attach($other);
+        $this->grantAccess($user, 'Some/Dir');
+
+        $this->assertSame(['' => false, 'Some' => true], $user->getPathAccessInfo(''));
+        $this->assertSame(['' => true], $user->getPathAccessInfo('Some/Dir/file.jpg'));
+        $this->assertSame(['' => false], $user->getPathAccessInfo('Some/Other/file.jpg'));
+        $this->assertSame(['' => true], $other->getPathAccessInfo('Some/Other/file.jpg'));
+    }
+
+    public function test_media_routes_hide_everything_from_a_user_without_rules(): void
+    {
+        $this->actingAs(User::factory()->create());
+
+        $this->get(route('dashboard'))->assertNotFound();
+        $this->get(route('dashboard', ['path' => 'valid/child']).'/')->assertNotFound();
+    }
+
     public function test_numeric_access_entries_remain_addressable_in_parent_listings(): void
     {
         $user = User::factory()->create();

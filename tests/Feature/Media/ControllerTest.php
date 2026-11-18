@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Media;
 
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
@@ -35,7 +34,7 @@ class ControllerTest extends TestCase
 
     public function test_media_index_without_path(): void
     {
-        $user = User::factory()->create();
+        $user = $this->userWithRootAccess();
 
         $response = $this->actingAs($user)->get(route('dashboard'));
 
@@ -44,7 +43,7 @@ class ControllerTest extends TestCase
 
     public function test_media_index_with_valid_path(): void
     {
-        $user = User::factory()->create();
+        $user = $this->userWithRootAccess();
 
         $response = $this->actingAs($user)->get(route('dashboard', ['path' => 'valid']).'/?page=1');
 
@@ -53,7 +52,7 @@ class ControllerTest extends TestCase
 
     public function test_media_index_with_invalid_path(): void
     {
-        $user = User::factory()->create();
+        $user = $this->userWithRootAccess();
 
         $response = $this->actingAs($user)->get(route('dashboard', ['path' => 'invalid']));
 
@@ -62,7 +61,7 @@ class ControllerTest extends TestCase
 
     public function test_media_index_with_valid_subpath(): void
     {
-        $user = User::factory()->create();
+        $user = $this->userWithRootAccess();
 
         $response = $this->actingAs($user)->get(route('dashboard', ['path' => 'valid/child']).'/?page=1');
 
@@ -87,7 +86,7 @@ class ControllerTest extends TestCase
             Process::preventStrayProcesses();
             Process::fake(fn () => "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n4\t1\t1\t1\t1\t0\t10\t10\t60\t20\t-1\t\n5\t1\t1\t1\t1\t1\t10\t10\t60\t20\t99\tHello\n");
 
-            $this->actingAs(User::factory()->create(['is_admin' => true]));
+            $this->actingAs($this->userWithRootAccess(['is_admin' => true]));
             $url = media_url(basename($imagePath)).'?_debug_ocr=1';
 
             $image = $this->get($url, ['Accept' => 'image/avif,image/webp,image/*,*/*;q=0.8']);
@@ -106,7 +105,7 @@ class ControllerTest extends TestCase
 
     public function test_media_index_with_invalid_subpath(): void
     {
-        $user = User::factory()->create();
+        $user = $this->userWithRootAccess();
 
         $response = $this->actingAs($user)->get(route('dashboard', ['path' => 'valid/invalid']));
 

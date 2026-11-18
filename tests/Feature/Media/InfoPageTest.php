@@ -14,7 +14,6 @@ use App\Models\StashPerformer;
 use App\Models\StashScene;
 use App\Models\StashStudio;
 use App\Models\StashTag;
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
@@ -80,7 +79,7 @@ class InfoPageTest extends TestCase
         $scene->tags()->attach(StashTag::create(['id' => Str::uuid(), 'name' => 'Some Tag']));
         $file->fingerprint->update(['phash' => 'abcdef0123456789', 'stash_scene_id' => $scene->id]);
 
-        $response = $this->actingAs(User::factory()->create())->get(media_info_url('Some/Dir/file.mp4'));
+        $response = $this->actingAs($this->userWithRootAccess())->get(media_info_url('Some/Dir/file.mp4'));
 
         $response->assertOk()
             ->assertSee('<title>Some Scene – ', false)
@@ -104,7 +103,7 @@ class InfoPageTest extends TestCase
             fn () => $file->extractedText()->createMany([['text' => 'First chunk'], ['text' => 'Second chunk']]),
         );
 
-        $response = $this->actingAs(User::factory()->create())->get(media_info_url('Some/Dir/file.mp4'));
+        $response = $this->actingAs($this->userWithRootAccess())->get(media_info_url('Some/Dir/file.mp4'));
 
         $response->assertOk()
             ->assertSee('Extracted text')
@@ -115,7 +114,7 @@ class InfoPageTest extends TestCase
     #[RequiresPhpExtension('intl')]
     public function test_falls_back_to_the_filesystem_for_files_that_are_not_indexed(): void
     {
-        $response = $this->actingAs(User::factory()->create())->get(media_info_url('Some/Dir/file.mp4'));
+        $response = $this->actingAs($this->userWithRootAccess())->get(media_info_url('Some/Dir/file.mp4'));
 
         $response->assertOk()
             ->assertSee('file.mp4')
@@ -128,7 +127,7 @@ class InfoPageTest extends TestCase
     {
         $this->indexFile('Some/Dir/file.mp4', ['size' => 1, 'thumbnail' => (string) Str::uuid()]);
 
-        $response = $this->actingAs(User::factory()->create())->get(media_info_url('Some/Dir/file.mp4'));
+        $response = $this->actingAs($this->userWithRootAccess())->get(media_info_url('Some/Dir/file.mp4'));
 
         $response->assertOk()
             ->assertDontSee('poster=', false)
@@ -139,14 +138,14 @@ class InfoPageTest extends TestCase
     {
         AccessControlEntry::create(['path' => 'Some/Dir']);
 
-        $this->actingAs(User::factory()->create())
+        $this->actingAs($this->userWithRootAccess())
             ->get(media_info_url('Some/Dir/file.mp4'))
             ->assertNotFound();
     }
 
     public function test_is_only_for_files_that_exist(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs($this->userWithRootAccess());
 
         $this->get(media_info_url('Some/Dir/'))->assertNotFound();
         $this->get(media_info_url('Some/Dir/missing.mp4'))->assertNotFound();
@@ -154,7 +153,7 @@ class InfoPageTest extends TestCase
 
     public function test_redirects_to_the_canonical_url(): void
     {
-        $this->actingAs(User::factory()->create())
+        $this->actingAs($this->userWithRootAccess())
             ->get($this->withTrailingSlash(media_info_url('Some/Dir/file.mp4').'/'))
             ->assertRedirect(media_info_url('Some/Dir/file.mp4').'?_=1');
     }
@@ -163,7 +162,7 @@ class InfoPageTest extends TestCase
     {
         $this->indexFile('Some/Dir/file.mp4');
 
-        $this->actingAs(User::factory()->create())
+        $this->actingAs($this->userWithRootAccess())
             ->get($this->withTrailingSlash(media_url('Some/Dir/')))
             ->assertOk()
             ->assertSee('data-info-url="'.media_info_url('Some/Dir/file.mp4').'"', false);
