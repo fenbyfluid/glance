@@ -2,9 +2,11 @@
 
 namespace App\Providers;
 
+use App\Auth\SharedLinkGuard;
 use App\Models\User;
 use App\Utilities\OverrideMimeTypeGuesser;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Vite;
@@ -13,6 +15,9 @@ use Laravel\Horizon\Horizon;
 use Laravel\Scout\EngineManager;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\Mime\MimeTypes;
+use TeamTNT\Scout\Engines\TNTSearchEngine;
+use TeamTNT\TNTSearch\Stemmer\PorterStemmer;
+use TeamTNT\TNTSearch\TNTSearch;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -53,6 +58,13 @@ class AppServiceProvider extends ServiceProvider
             return $user->is_admin;
         });
 
+        Auth::extend('shared-link', function ($app) {
+            $guard = new SharedLinkGuard($app['request']);
+            $app->refresh('request', $guard, 'setRequest');
+
+            return $guard;
+        });
+
         Horizon::auth(function ($request) {
             return Gate::check('admin', [$request->user()]);
         });
@@ -65,12 +77,12 @@ class AppServiceProvider extends ServiceProvider
         // Duplicate the tntsearch driver with one with a stemmer configured.
         // Unfortunately this is fairly hacky as we don't have anyway to get a fresh original instance out of Scout.
         $this->app[EngineManager::class]->extend('tntsearch_stemmed', function () {
-            $tnt = new \TeamTNT\TNTSearch\TNTSearch;
+            $tnt = new TNTSearch;
 
             $driver = config('database.default');
             $config = config('scout.tntsearch') + config("database.connections.{$driver}");
 
-            $config['stemmer'] = \TeamTNT\TNTSearch\Stemmer\PorterStemmer::class;
+            $config['stemmer'] = PorterStemmer::class;
 
             $tnt->loadConfig($config);
             $tnt->setDatabaseHandle(app('db')->connection()->getPdo());
@@ -79,7 +91,7 @@ class AppServiceProvider extends ServiceProvider
             // TODO: This doesn't appear to change anything.
             $tnt->asYouType(true);
 
-            return new \TeamTNT\Scout\Engines\TNTSearchEngine($tnt);
+            return new TNTSearchEngine($tnt);
         });
     }
 }

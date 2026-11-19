@@ -10,6 +10,7 @@ use App\Media\OpenSubtitlesHasher;
 use App\Search\FilterableSqliteEngine;
 use App\Utilities\Path;
 use App\Utilities\ScopeHavingAccess;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -104,6 +105,20 @@ class IndexedFile extends Model
         }
 
         $this->extractedText()->createMany(array_map(fn (string $chunk) => ['text' => $chunk], $scene->textChunks()));
+    }
+
+    public function scopeAtPath(Builder $query, string $path): void
+    {
+        $query->whereRelation('directory', 'path', str_contains($path, '/') ? dirname($path) : '')
+            ->where('name', basename($path));
+    }
+
+    /**
+     * The file's path under the media root. Needs the directory loaded.
+     */
+    public function getPath(): string
+    {
+        return ltrim($this->directory->path.'/'.$this->name, '/');
     }
 
     public function isIndexOutdated(\SplFileInfo $info): bool

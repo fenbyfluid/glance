@@ -21,6 +21,7 @@ class DatabaseSeeder extends Seeder
             'password' => 'password',
             'note' => 'Admin User',
             'is_admin' => true,
+            'can_share' => true,
         ]);
 
         // Nothing is accessible unless a rule grants it.

@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\User;
+
 return [
 
     /*
@@ -40,6 +42,12 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        // Visitors who aren't signed in but have opened shared links (App\Auth\SharedLinkGuard). Only listed by the
+        // routes that serve shared files.
+        'shared' => [
+            'driver' => 'shared-link',
+        ],
     ],
 
     /*
@@ -62,7 +70,7 @@ return [
     'providers' => [
         'users' => [
             'driver' => 'eloquent',
-            'model' => env('AUTH_MODEL', App\Models\User::class),
+            'model' => env('AUTH_MODEL', User::class),
         ],
 
         // 'users' => [

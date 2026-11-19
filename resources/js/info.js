@@ -16,6 +16,20 @@ document.addEventListener('DOMContentLoaded', function() {
         playVideoWithFallback(element, element.querySelector('source').src);
     });
 
+    // The share dialog (share.js) gets this page's URL, with the playing video's position like the lightbox's.
+    document.querySelectorAll('[data-share-path]').forEach(function(button) {
+        button.addEventListener('click', function() {
+            const url = new URL(window.location.href);
+            const video = document.querySelector('video[data-player-video]');
+
+            url.hash = (video && video.currentTime > 0) ? 't=' + Math.floor(video.currentTime) : '';
+
+            window.dispatchEvent(new CustomEvent('open-share-dialog', {
+                detail: { path: button.getAttribute('data-share-path'), internalUrl: url.href },
+            }));
+        });
+    });
+
     document.querySelectorAll('[data-player-text]').forEach(function(container) {
         const kind = container.getAttribute('data-player-text');
 

@@ -22,6 +22,8 @@
             @endif
         @endforeach
     </ol>
+    {{-- Search isn't open to visitors who only have shared links. --}}
+    @unless(Auth::user() instanceof \App\Auth\SharedLinkGuest)
     <div x-data class="flex items-center shrink-0">
         <a href="#" x-on:click.prevent="$store.searchModal.toggle(); $store.searchModal.open && $nextTick(() => document.getElementById('query').focus())" class="size-6 shrink-0 text-base text-gray-400 select-none sm:text-sm/6">
             <svg x-show="!$store.searchModal.open" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
@@ -55,4 +57,5 @@
             </div>
         </template>
     </div>
+    @endunless
 </div>

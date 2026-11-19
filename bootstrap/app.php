@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\MediaController;
+use App\Http\Middleware\AddNoIndexHeader;
 use App\Http\Middleware\EnsureUserIsActivated;
 use App\Http\Middleware\RedirectLocalAccess;
 use Illuminate\Foundation\Application;
@@ -18,7 +19,9 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->alias([
             'activated' => EnsureUserIsActivated::class,
-        ])->web([], [
+        ])->web([
+            AddNoIndexHeader::class,
+        ], [
             RedirectLocalAccess::class,
         ]);
     })

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Auth\PathAccess;
 use App\Exceptions\ImageExtractionIncompleteException;
 use App\Jobs\ExtractTextJob;
 use App\Jobs\IndexDirectoryJob;
@@ -31,7 +32,7 @@ class MediaController extends Controller
 
         $user = $request->user();
         $accessControlOverrideUser = User::getAccessControlOverrideUser($request);
-        $accessControlInfo = ($accessControlOverrideUser ?? $user)->getPathAccessInfo($path);
+        $accessControlInfo = PathAccess::forRequest($request, $path);
 
         // User has no access to anything under here, nothing to do.
         if (count(array_filter($accessControlInfo)) === 0) {
@@ -160,8 +161,7 @@ class MediaController extends Controller
 
         $user = $request->user();
         $accessControlOverrideUser = User::getAccessControlOverrideUser($request);
-        $accessControlInfo = ($accessControlOverrideUser ?? $user)->getPathAccessInfo($path);
-        if (!$accessControlInfo['']) {
+        if (!PathAccess::forRequest($request, $path)['']) {
             abort(404);
         }
 
@@ -177,10 +177,8 @@ class MediaController extends Controller
 
         // TODO: Files that aren't in the index yet only get what the filesystem tells us. We could dispatch an
         //       IndexDirectoryJob for the parent like index() does, but the page is still useful without it.
-        $directoryPath = str_contains($path, '/') ? dirname($path) : '';
         $fileEntry = IndexedFile::query()
-            ->whereRelation('directory', 'path', $directoryPath)
-            ->where('name', basename($path))
+            ->atPath($path)
             ->with([
                 'extractedText',
                 'fingerprint.stashScene.studio.parentStudio.parentStudio',
@@ -210,6 +208,8 @@ class MediaController extends Controller
             'scene' => $scene,
             'extractedText' => ($extractedText !== '') ? $extractedText : null,
             'accessControlOverrideUser' => $accessControlOverrideUser,
+            // Links are created with the user's own access, not one an admin is browsing as or a shared link.
+            'canShare' => !PathAccess::isGuest($request) && $user->getPathAccessInfo($path)[''],
         ]);
     }
 
@@ -226,10 +226,7 @@ class MediaController extends Controller
         $path = $matches[1];
         $segment = ($matches[2] !== null) ? (int) $matches[2] : null;
 
-        $user = $request->user();
-        $accessControlOverrideUser = User::getAccessControlOverrideUser($request);
-        $accessControlInfo = ($accessControlOverrideUser ?? $user)->getPathAccessInfo($path);
-        if (!$accessControlInfo['']) {
+        if (!PathAccess::forRequest($request, $path)['']) {
             abort(404);
         }
 
@@ -249,10 +246,23 @@ class MediaController extends Controller
         }
     }
 
-    public function image(string $id): Response
+    public function image(Request $request, string $id): Response
     {
         if (!Str::isUuid($id)) {
             abort(404);
+        }
+
+        // TODO: Signed-in users can load any image by its ID, which can't be guessed but isn't checked against their
+        //       access either. Guests only get the images of the files they've been shared.
+        if (PathAccess::isGuest($request)) {
+            $file = IndexedFile::query()
+                ->where(fn ($query) => $query->where('thumbnail', $id)->orWhere('filmstrip', $id))
+                ->with('directory')
+                ->first();
+
+            if ($file === null || !$request->user()->getPathAccessInfo($file->getPath())['']) {
+                abort(404);
+            }
         }
 
         $filesystemPath = Path::makeThumbnailPath($id);

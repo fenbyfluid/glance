@@ -22,7 +22,7 @@ notes (DB caching plan, metadata/search ideas) live in `README.md`; read it befo
 ## Commands
 
 ```bash
-php artisan test                      # PHPUnit (109 tests, ~3s); sqlite :memory:, sync queue, MEDIA_PATH=resources/test-media
+php artisan test                      # PHPUnit (133 tests, ~3s); sqlite :memory:, sync queue, MEDIA_PATH=resources/test-media
 php artisan test --filter=PathTest
 vendor/bin/pint path/to/File.php      # format only files you touched (see Style)
 composer dev                          # serve + queue:listen + pail + vite
@@ -44,6 +44,9 @@ php artisan app:hash [-T] [-m method...] [-r reference] [path...] # compute osha
   mass fix. For a file with the user's unstaged WIP, run Pint on the staged blob too and check the WIP hunks survive.
 - Code is written in US English (`color`, `normalize`, `behavior`).
 - Code inlines FQCNs like `\App\Jobs\ExtractTextJob::…` and `\SplFileInfo` in places — fine to match.
+- Blade directives (`@js`, `@class`, …) are **not compiled inside `<x-component>` tag attributes**: they reach the
+  page literally (an Alpine `x-text="@js(…)"` there throws and renders nothing). Use `{{ }}`, `:attr="$php"`
+  bindings, or a plain element.
 - Lots of explanatory `// TODO:` comments documenting known trade-offs and future plans; keep and extend that habit
   rather than deleting them.
 - `Model::shouldBeStrict()` is on: no lazy loading (eager-load relations), no silently-discarded attributes, no missing
@@ -53,7 +56,8 @@ php artisan app:hash [-T] [-m method...] [-r reference] [path...] # compute osha
 
 ### Request path (`MediaController`)
 - All app URLs are a catch-all `/{path}` (`dashboard` route). Internal routes are `_`-prefixed (`/_search`, `/_info`,
-  `/_stream`, `/_image/{uuid}.avif`, `/_admin`, `/_profile`, `/_health`) so they can't clash with media paths.
+  `/_stream`, `/_image/{uuid}.avif`, `/_s`, `/_links`, `/_admin`, `/_profile`, `/_health`) so they can't clash with
+  media paths.
 - Always normalise user paths with `Utilities\Path::resolve()` (strips `.`/`..`/empty segments). Build links with
   `media_url($path)` (`app/helpers.php`) — it encodes segments once; Laravel 13 double-encodes pre-encoded route params.
 - `ensurePathCanonical()` enforces trailing slash for directories, none for files.
@@ -71,7 +75,7 @@ php artisan app:hash [-T] [-m method...] [-r reference] [path...] # compute osha
 - `/_info/{file}` (`media_info_url()`) → `media.info`: player on the right, sidebar of `Media\FileDetails` sections
   (filesystem + `media_info` + fingerprints) and the matched StashDB scene. Works for unindexed files (filesystem only)
   and ignores an index entry that's outdated. Reached from the lightbox's info button (tiles carry `data-info-url`;
-  a playing video's position is passed as `#t=<s>`), and is what the lightbox's share button links to.
+  a playing video's position is passed as `#t=<s>`), and is where a shared link takes its visitors.
 - Frontend: `resources/js/player.js` holds what the lightbox (`media.js`) and info page (`info.js`) share: direct
   playback with the HLS fallback (`playVideoWithFallback()` returns a destroy function) and text/HTML rendering.
 
@@ -82,10 +86,22 @@ php artisan app:hash [-T] [-m method...] [-r reference] [path...] # compute osha
   seeder grants it to its admin).
 - Lists are filtered with the `ScopeHavingAccess` trait (`havingAccess($info)` on `name`). Child names may be numeric →
   PHP int array keys; always `strval` when comparing (past bug).
-- Admins can impersonate for ACL purposes: always use `User::getAccessControlOverrideUser($request) ?? $user`.
+- Admins can impersonate for ACL purposes. In request handling use `Auth\PathAccess::forRequest($request, $path)`,
+  which covers impersonation (`User::getAccessControlOverrideUser($request) ?? $user`) and shared links.
 - Not-allowed ⇒ `abort(404)` (never 403, don't leak existence). Gate `admin` = `users.is_admin`; also guards Horizon.
 - `EnsureUserIsActivated` (`activated` middleware): users are invite-only (`InvitedUserController`), no registration.
 - Any new endpoint touching paths must do the ACL check; tests in `tests/Feature/AccessControlTest.php`.
+- Shared links (`SharedLink`, soft-deleted on revoke, pruned 30 days after revocation/expiry): `/_s/{token}` puts the
+  link ID in the session (`Auth\SharedLinkGrants`) and answers with an Open Graph page that forwards to `/_info`
+  (unfurlers drop cookies on redirects). Every request rechecks each link (`isUsable()`: not expired/revoked, creator
+  activated, still has access and `users.can_share`, path still a file), so links work through the creator's *live*
+  access and break on move. Guests get a non-persisted `Auth\SharedLinkGuest` from the `shared` guard, listed only on
+  the routes a shared file needs (`auth:web,shared`: info, file, stream, image); `PathAccess` sends a guest to login
+  for any path its links don't cover. Signed-in users get the session's links added to their own access, but can only
+  *create* links with their own access, and only with `can_share`, which admins grant per user on the user form
+  (admins included, no override; `/_links` JSON API, `SharedLinkPolicy`). Tests: `SharedLinkTest` (overrides
+  `call()` because `Authenticate` makes the used guard the default for the rest of the process). Directory links are
+  planned (`is_directory` exists, `isUsable()` rejects them for now).
 
 ### Indexing pipeline (`app/Jobs`, Horizon on Redis/Valkey)
 - `IndexDirectoryJob` diffs disk vs `indexed_directories`/`indexed_files`, creates/updates rows, **force-deletes**

@@ -35,11 +35,13 @@ class UserController extends Controller
         $request->validate([
             'note' => ['required', 'string', 'max:255'],
             'is_admin' => ['nullable', 'boolean'],
+            'can_share' => ['nullable', 'boolean'],
         ]);
 
         $user = User::create([
             'note' => $request->note,
             'is_admin' => $request->has('is_admin'),
+            'can_share' => $request->has('can_share'),
         ]);
 
         event(new Registered($user));
@@ -68,11 +70,13 @@ class UserController extends Controller
         $request->validate([
             'note' => ['required', 'string', 'max:255'],
             'is_admin' => ['nullable', 'boolean'],
+            'can_share' => ['nullable', 'boolean'],
         ]);
 
         $user->fill([
             'note' => $request->note,
             'is_admin' => $request->has('is_admin'),
+            'can_share' => $request->has('can_share'),
         ])->save();
 
         return redirect()

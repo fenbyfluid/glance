@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SearchController;
+use App\Http\Controllers\SharedLinkController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -14,12 +15,35 @@ Route::get('/_get_remote_ip', function (Request $request) {
     return response($request->ip(), 200, ['Content-Type' => 'text/plain']);
 })->name('utility.discover_ip');
 
+// Public: records the link in the session and forwards to the file's info page (see SharedLinkGuard).
+Route::middleware('throttle:60,1')->group(function () {
+    Route::get('/_s/{token}', [SharedLinkController::class, 'show'])
+        ->where('token', '[A-Za-z0-9]+')
+        ->name('shared-link.show');
+
+    Route::get('/_s/{token}/preview.jpg', [SharedLinkController::class, 'preview'])
+        ->where('token', '[A-Za-z0-9]+')
+        ->name('shared-link.preview');
+});
+
 Route::middleware(['auth', 'activated'])->group(function () {
     Route::get('/_profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/_profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/_profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    Route::get('/_profile/links', [SharedLinkController::class, 'mine'])
+        ->middleware('can:create,App\Models\SharedLink')
+        ->name('profile.links');
+
+    Route::prefix('_links')->name('shared-links.')->group(function () {
+        Route::get('/', [SharedLinkController::class, 'index'])->name('index');
+        Route::post('/', [SharedLinkController::class, 'store'])->name('store');
+        Route::patch('/{sharedLink}', [SharedLinkController::class, 'update'])->name('update');
+        Route::delete('/{sharedLink}', [SharedLinkController::class, 'destroy'])->name('destroy');
+    });
 
     Route::prefix('_admin')->name('admin.')->middleware(['can:admin'])->group(function () {
+        Route::get('/links', [SharedLinkController::class, 'all'])->name('links.index');
+
         Route::post('/users/impersonate/{user?}', [UserController::class, 'impersonate'])
             ->name('users.impersonate');
 
@@ -37,7 +61,11 @@ Route::middleware(['auth', 'activated'])->group(function () {
         Route::get('/name/{query?}', [SearchController::class, 'name'])->name('name');
         Route::get('/content/{query?}', [SearchController::class, 'content'])->name('content');
     });
+});
 
+// What a shared file needs, so guests with shared links in their session get in too. The controller checks every path
+// (PathAccess) and sends a guest to the login page for anything its links don't cover.
+Route::middleware(['auth:web,shared', 'activated'])->group(function () {
     Route::get('/_info/{path?}', [MediaController::class, 'info'])
         ->where('path', '.*')
         ->name('media.info');

@@ -14,7 +14,10 @@
             <x-input-error class="mt-2" :messages="$errors->get('note')" />
         </div>
 
-        <x-checkbox-input id="is_admin" name="is_admin" :checked="old('is_admin', false)" :label="__('Admin')" :messages="$errors->get('is_admin')" />
+        <div class="space-y-2">
+            <x-checkbox-input id="is_admin" name="is_admin" :checked="old('is_admin', false)" :label="__('Admin')" :messages="$errors->get('is_admin')" />
+            <x-checkbox-input id="can_share" name="can_share" :checked="old('can_share', false)" :label="__('Can create public links')" :messages="$errors->get('can_share')" />
+        </div>
 
         <div class="flex items-center gap-4">
             <x-primary-button>{{ __('Create') }}</x-primary-button>

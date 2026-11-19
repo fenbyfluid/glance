@@ -42,5 +42,10 @@
                 {{ $slot }}
             </main>
         </div>
+
+        {{-- Opened by the share buttons in the lightbox and on the info page. --}}
+        @if(Auth::check() && !(Auth::user() instanceof \App\Auth\SharedLinkGuest))
+            @include('shared-links.partials.dialog')
+        @endif
     </body>
 </html>

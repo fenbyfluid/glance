@@ -29,14 +29,17 @@ function getInfoUrl(slide, withCurrentTime = false) {
 }
 
 /**
- * The URL as reached from outside: on the local network we're redirected to a `-local` hostname, which won't resolve
- * for anyone else (see RedirectLocalAccess::getExternalHostIfLocal()).
+ * The media path of a slide's file, from its info page URL (`/_info/<encoded path>`).
  */
-function toPublicUrl(href) {
-    const url = new URL(href);
-    url.hostname = url.hostname.replace(/^([^.]+)-local\./, '$1.');
+function getMediaPath(slide) {
+    const infoUrl = getInfoUrl(slide);
+    if (!infoUrl) {
+        return null;
+    }
 
-    return url.href;
+    const encodedPath = new URL(infoUrl).pathname.replace(/^.*?\/_info\//, '');
+
+    return encodedPath.split('/').map(decodeURIComponent).join('/');
 }
 
 function logFancyboxState(label, current) {
@@ -130,21 +133,17 @@ $.fancybox.defaults = {
         instance.$refs.container.find('[data-fancybox-info]')
             .attr('href', infoUrl ?? 'javascript:;')
             .toggle(infoUrl !== null);
+
+        // Sharing goes by the file's path, which only files with an info page have.
+        instance.$refs.container.find('[data-glance-share]').toggle(infoUrl !== null);
     },
     btnTpl: {
         ...$.fancybox.defaults.btnTpl,
         info: '<a data-fancybox-info class="fancybox-button fancybox-button--info" title="Info" href="javascript:;">' +
             '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 1.5a7.5 7.5 0 1 1 0 15 7.5 7.5 0 0 1 0-15ZM11.1 10.5h1.8v6h-1.8ZM12 6.9a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2Z"/></svg>' +
             '</a>',
-    },
-    share: {
-        ...$.fancybox.defaults.share,
-        url: function(instance, item) {
-            // TODO: This is only a link for users who already have access, we'll want our own share function for
-            //       public links (see the project plan).
-            return toPublicUrl(getInfoUrl(item, true) ?? new URL(item.src, window.location.href).href);
-        },
-        tpl: `<div class="fancybox-share"><input class="fancybox-share__input" type="text" value="{{url_raw}}" onclick="select()" /></div>`,
+        // Upstream's icon, opening our share dialog (share.js) rather than upstream's share panel.
+        share: $.fancybox.defaults.btnTpl.share.replace('data-fancybox-share', 'data-glance-share'),
     },
     caption: function(instance, item) {
         // This is pre-calculated for all items on init
@@ -176,6 +175,19 @@ $(document).on('mousedown click', '[data-fancybox-info]', function() {
     if (infoUrl) {
         this.href = infoUrl;
     }
+});
+
+$(document).on('click', '[data-glance-share]', function() {
+    const instance = $.fancybox.getInstance();
+    const path = instance?.current ? getMediaPath(instance.current) : null;
+
+    if (path === null) {
+        return;
+    }
+
+    window.dispatchEvent(new CustomEvent('open-share-dialog', {
+        detail: { path, internalUrl: getInfoUrl(instance.current, true) },
+    }));
 });
 
 document.addEventListener('DOMContentLoaded', function() {

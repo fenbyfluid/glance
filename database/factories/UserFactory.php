@@ -2,12 +2,13 @@
 
 namespace Database\Factories;
 
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\User>
+ * @extends Factory<User>
  */
 class UserFactory extends Factory
 {
@@ -28,6 +29,7 @@ class UserFactory extends Factory
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
             'is_admin' => false,
+            'can_share' => false,
         ];
     }
 
@@ -41,6 +43,17 @@ class UserFactory extends Factory
             'password' => null,
             'remember_token' => null,
             'is_admin' => false,
+            'can_share' => false,
+        ]);
+    }
+
+    /**
+     * Indicate that the user can create public shared links.
+     */
+    public function canShare(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'can_share' => true,
         ]);
     }
 }

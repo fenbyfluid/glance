@@ -3,9 +3,13 @@ import './bootstrap';
 import '../css/app.css';
 
 import Alpine from 'alpinejs';
+import { copyInput, shareDialog } from './share.js';
 
 import 'clockwork-browser/metrics';
 import 'clockwork-browser/toolbar';
+
+Alpine.data('copyInput', copyInput);
+Alpine.data('shareDialog', shareDialog);
 
 Alpine.store('searchModal', {
     open: false,

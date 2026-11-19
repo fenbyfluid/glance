@@ -34,7 +34,9 @@ Web-based media viewer
 * [x] Directory tree authorization
   * [x] UI for managing authorization rules
 * [x] Static files must be authorized too (with Nginx)
-* [ ] Public link generation - directory or file
+* [ ] Public link generation
+  * [x] File
+  * [ ] Directory
 * [x] Search
   * [x] Ngram search for file/directory names
   * [x] Full text search on "descriptions"

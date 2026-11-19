@@ -78,9 +78,13 @@
         <aside class="lg:w-96 lg:shrink-0 space-y-4">
             <div class="p-5 bg-white dark:bg-gray-800 shadow-sm rounded-lg">
                 <h1 class="text-lg font-semibold break-words text-gray-900 dark:text-gray-100">{{ basename($path) }}</h1>
-                <div class="mt-3 flex flex-wrap gap-2">
-                    <x-primary-link href="{{ $fileUrl }}" download>Download</x-primary-link>
-                    <x-secondary-link href="{{ $fileUrl }}">Open original</x-secondary-link>
+                {{-- Three buttons don't fit on a row in the sidebar, so Download gets its own above the others. --}}
+                <div class="mt-3 grid grid-cols-2 gap-2">
+                    <x-primary-link href="{{ $fileUrl }}" download :class="$canShare ? 'justify-center col-span-2' : 'justify-center'">Download</x-primary-link>
+                    <x-secondary-link href="{{ $fileUrl }}" class="justify-center">Open original</x-secondary-link>
+                    @if($canShare)
+                        <x-secondary-button data-share-path="{{ $path }}" class="justify-center">Share</x-secondary-button>
+                    @endif
                 </div>
             </div>
 

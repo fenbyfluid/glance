@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\URL;
  * @property string|null $remember_token
  * @property string $note
  * @property bool $is_admin
+ * @property bool $can_share
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -35,6 +36,7 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
     protected $attributes = [
         'note' => '',
         'is_admin' => false,
+        'can_share' => false,
     ];
 
     /**
@@ -47,6 +49,7 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
         'password',
         'note',
         'is_admin',
+        'can_share',
     ];
 
     /**
@@ -69,6 +72,7 @@ class User extends Model implements AuthenticatableContract, AuthorizableContrac
         return [
             'password' => 'hashed',
             'is_admin' => 'boolean',
+            'can_share' => 'boolean',
         ];
     }
 
