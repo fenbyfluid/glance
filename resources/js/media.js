@@ -134,8 +134,9 @@ $.fancybox.defaults = {
             .attr('href', infoUrl ?? 'javascript:;')
             .toggle(infoUrl !== null);
 
-        // Sharing goes by the file's path, which only files with an info page have.
-        instance.$refs.container.find('[data-glance-share]').toggle(infoUrl !== null);
+        // Sharing goes by the file's path, which only files with an info page have, and is only for files the user can
+        // see with their own access (not guests, nor someone else's link): the tile says so.
+        instance.$refs.container.find('[data-glance-share]').toggle(infoUrl !== null && current.opts.$orig?.is('[data-shareable]') === true);
     },
     btnTpl: {
         ...$.fancybox.defaults.btnTpl,

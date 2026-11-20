@@ -2,13 +2,17 @@
 
 namespace App\Providers;
 
+use App\Auth\PathAccess;
 use App\Auth\SharedLinkGuard;
 use App\Models\User;
 use App\Utilities\OverrideMimeTypeGuesser;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Horizon\Horizon;
@@ -63,6 +67,16 @@ class AppServiceProvider extends ServiceProvider
             $app->refresh('request', $guard, 'setRequest');
 
             return $guard;
+        });
+
+        // Searches are heavy, and anyone holding a shared link can run them as a guest. By IP rather than session, as
+        // opening the link again starts a fresh session.
+        RateLimiter::for('search', function (Request $request) {
+            if (!PathAccess::isGuestRequest($request)) {
+                return Limit::none();
+            }
+
+            return Limit::perMinute(30)->by('guest-search|'.$request->ip());
         });
 
         Horizon::auth(function ($request) {

@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Auth\PathAccess;
 use App\Events\SearchOverheated;
 use App\Media\MediaContentKind;
-use App\Models\AccessControlEntry;
 use App\Models\IndexedDirectory;
 use App\Models\IndexedFile;
 use App\Models\IndexedFileText;
@@ -81,7 +81,8 @@ class SearchController extends Controller
                     return $result->directory->path.'/'.$result->name;
                 },
                 'filter' => function (SearchScope $scope) use ($includeKinds) {
-                    return $this->makeFileFilter($scope, $includeKinds);
+                    // Files are their own documents.
+                    return $this->makeFileFilter($scope, $includeKinds, fn (array $fileIds) => $fileIds);
                 },
             ];
         }
@@ -105,6 +106,7 @@ class SearchController extends Controller
                         'path' => $result->path,
                         'link' => '/'.$result->__path__.'/',
                         'score' => $result->__tntSearchScore__,
+                        'shared' => $result->__only_through_links__,
                     ],
                     $result instanceof IndexedFile => [
                         'kind' => $result->kind->value,
@@ -113,6 +115,7 @@ class SearchController extends Controller
                         'thumbnail' => $result->thumbnail,
                         'link' => media_info_url($result->__path__),
                         'score' => $result->__tntSearchScore__,
+                        'shared' => $result->__only_through_links__,
                     ],
                 };
             }),
@@ -140,7 +143,9 @@ class SearchController extends Controller
                         return $result->file->directory->path.'/'.$result->file->name;
                     },
                     'filter' => function (SearchScope $scope) use ($includeKinds) {
-                        return $this->makeFileFilter($scope, $includeKinds);
+                        return $this->makeFileFilter($scope, $includeKinds, function (array $fileIds) {
+                            return IndexedFileText::query()->whereIn('file_id', $fileIds)->pluck('id')->all();
+                        });
                     },
                 ],
             ], $pathPrefix, 20);
@@ -164,6 +169,7 @@ class SearchController extends Controller
                     'text' => $shortText,
                     'link' => media_info_url($result->__path__),
                     'score' => $result->__tntSearchScore__,
+                    'shared' => $result->__only_through_links__,
                 ];
             }),
         ];
@@ -212,11 +218,13 @@ class SearchController extends Controller
     /**
      * Build the index filter for a search over documents stored with their file's directory and kind.
      *
-     * Files are in scope if their directory is, as access control rules are only expected to target directories.
+     * Files are in scope if their directory is, as access control rules are only expected to target directories, or if
+     * they're shared on their own (SearchScope::getFilePaths()).
      *
      * @param  list<string>  $includeKinds
+     * @param  callable(list<int> $fileIds): list<int>  $documentIdsForFiles  The index's documents for some files.
      */
-    private function makeFileFilter(SearchScope $scope, array $includeKinds): ?DocumentFilter
+    private function makeFileFilter(SearchScope $scope, array $includeKinds, callable $documentIdsForFiles): ?DocumentFilter
     {
         $kinds = (count($includeKinds) === count(MediaContentKind::cases())) ? null : $includeKinds;
 
@@ -224,9 +232,18 @@ class SearchController extends Controller
             return ($kinds === null) ? null : new DocumentFilter(kinds: $kinds);
         }
 
+        $fileIds = [];
+        foreach ($scope->getFilePaths() as $filePath) {
+            $fileId = IndexedFile::query()->atPath($filePath)->value('id');
+            if ($fileId !== null) {
+                $fileIds[] = $fileId;
+            }
+        }
+
         return new DocumentFilter(
             directoryIds: array_keys($this->getAllowedDirectories($scope)),
             kinds: $kinds,
+            extraDocumentIds: (count($fileIds) > 0) ? $documentIdsForFiles($fileIds) : [],
         );
     }
 
@@ -242,17 +259,11 @@ class SearchController extends Controller
      */
     private function performSearchWithAccessControl(Request $request, array $queries, ?string $pathPrefix, int $limit): Collection
     {
-        $user = $request->user();
-        $accessControlOverrideUser = User::getAccessControlOverrideUser($request);
-        $accessControlUser = $accessControlOverrideUser ?? $user;
+        $accessControlUser = User::getAccessControlOverrideUser($request) ?? $request->user();
 
-        $accessControlEntries = AccessControlEntry::affectingPath('')->withCount([
-            'users' => function (Eloquent\Builder $query) use ($accessControlUser) {
-                $query->whereKey($accessControlUser->getKey());
-            },
-        ])->get()->reverse();
-
-        $scope = SearchScope::fromAccessControlEntries($accessControlEntries, $pathPrefix);
+        // The same rules as everywhere else: the user's own (or the impersonated user's), plus the session's links.
+        $pathAccess = PathAccess::forRequest($request);
+        $scope = $pathAccess->searchScope($pathPrefix);
         if ($scope->isEmpty()) {
             return new Collection;
         }
@@ -372,20 +383,11 @@ class SearchController extends Controller
 
             // First check user access.
             // The scope filter already excludes anything the user can't access, but this remains the authoritative check.
-            $hasAccess = false;
-            foreach ($accessControlEntries as $entry) {
-                // The deepest rule that is the path itself or one of its ancestors wins.
-                // Entries are in reverse path order, so the first match is the deepest.
-                $entryPath = strval($entry->path);
-                if ($entryPath === '' || $path === $entryPath || str_starts_with($path, $entryPath.'/')) {
-                    $hasAccess = $entry->users_count > 0;
-                    break;
-                }
-            }
-
-            if (!$hasAccess) {
+            if (!$pathAccess->allows($path)) {
                 continue;
             }
+
+            $nextResult->setAttribute('__only_through_links__', $pathAccess->isOnlyThroughLinks($path));
 
             // Merge the result into the collection, taking the highest score
             if ($results->has($path)) {

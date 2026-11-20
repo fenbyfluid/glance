@@ -141,6 +141,7 @@ window.performSearch = function performSearch(event) {
     if (query.length === 0) {
         this.$data.loading = false;
         this.$data.overheated = false;
+        this.$data.error = null;
         this.$data.results = [];
 
         return;
@@ -153,6 +154,17 @@ window.performSearch = function performSearch(event) {
     fetch(`${this.$data[index]}/${encodeURIComponent(query)}?${searchParams}`, {
         method: 'GET',
     }).then(response => {
+        // Guests' searches are throttled (see AppServiceProvider), so say when it's worth trying again.
+        if (response.status === 429) {
+            const retryAfter = parseInt(response.headers.get('Retry-After') ?? '', 10);
+            const error = new Error('Search throttled');
+            error.userMessage = Number.isFinite(retryAfter) && retryAfter > 0
+                ? `Too many searches, try again in ${retryAfter} second${retryAfter === 1 ? '' : 's'}.`
+                : 'Too many searches, try again in a minute.';
+
+            throw error;
+        }
+
         if (!response.ok) {
             throw new Error(`Search failed: ${response.status}`);
         }
@@ -165,6 +177,7 @@ window.performSearch = function performSearch(event) {
         }
 
         this.$data.overheated = response.overheated;
+        this.$data.error = null;
         this.$data.results = response.results;
     }).catch(error => {
         console.error(error);
@@ -174,6 +187,7 @@ window.performSearch = function performSearch(event) {
         }
 
         this.$data.overheated = false;
+        this.$data.error = error.userMessage ?? 'Search failed, please try again.';
         this.$data.results = [];
     }).finally(() => {
         // Only the latest request owns the indicator, so an older one finishing late doesn't hide it.

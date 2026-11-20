@@ -189,6 +189,7 @@ class FilterableSqliteEngine extends SqliteEngine
 
             $load('filter_documents', 'INTEGER', array_map('intval', $filter->documentIds ?? []));
             $load('filter_directories', 'INTEGER', array_map('intval', $filter->directoryIds ?? []));
+            $load('filter_extra_documents', 'INTEGER', array_map('intval', $filter->extraDocumentIds));
             $load('filter_kinds', 'TEXT', array_map('strval', $filter->kinds ?? []));
 
             if ($filter->needsMetadata()) {
@@ -208,7 +209,12 @@ class FilterableSqliteEngine extends SqliteEngine
             $condition .= ' AND doclist.doc_id IN (SELECT value FROM temp.filter_documents)';
         }
         if ($filter->directoryIds !== null) {
-            $condition .= ' AND document_meta.directory_id IN (SELECT value FROM temp.filter_directories)';
+            if (count($filter->extraDocumentIds) > 0) {
+                $condition .= ' AND (document_meta.directory_id IN (SELECT value FROM temp.filter_directories)'
+                    .' OR doclist.doc_id IN (SELECT value FROM temp.filter_extra_documents))';
+            } else {
+                $condition .= ' AND document_meta.directory_id IN (SELECT value FROM temp.filter_directories)';
+            }
         }
         if ($filter->kinds !== null) {
             $condition .= ' AND document_meta.kind IN (SELECT value FROM temp.filter_kinds)';

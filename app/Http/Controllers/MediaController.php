@@ -32,12 +32,11 @@ class MediaController extends Controller
 
         $user = $request->user();
         $accessControlOverrideUser = User::getAccessControlOverrideUser($request);
-        $accessControlInfo = PathAccess::forRequest($request, $path);
+        $pathAccess = PathAccess::forRequest($request);
 
-        // User has no access to anything under here, nothing to do.
-        if (count(array_filter($accessControlInfo)) === 0) {
-            abort(404);
-        }
+        // Nothing under here is visible, nothing to do. (Checked before looking at the filesystem, so it can't tell
+        // what exists.)
+        $accessControlInfo = $pathAccess->ensureVisible($path, isDirectory: true);
 
         $filesystemPath = config('media.path').'/'.$path;
 
@@ -46,7 +45,7 @@ class MediaController extends Controller
         if ($pathInfo->isFile()) {
             // For a file, only direct access is suitable.
             if (!$accessControlInfo['']) {
-                abort(404);
+                $pathAccess->deny();
             }
 
             $this->ensurePathCanonical($request, false);
@@ -89,6 +88,10 @@ class MediaController extends Controller
         $contents = app('clockwork')->event('Getting contents')->run(function () use ($source) {
             return $source->getContents();
         });
+
+        foreach ($contents as $content) {
+            $content->isOnlyThroughLinks = $pathAccess->isOnlyThroughLinks($path, $content->label);
+        }
 
         // TODO: This needs to be an option per-directory.
         $grouped = app('clockwork')->event('Grouping contents')->run(function () use ($contents) {
@@ -152,6 +155,7 @@ class MediaController extends Controller
             'readme' => $source->getReadmeHtml(),
             'contents' => $paginator,
             'accessControlOverrideUser' => $accessControlOverrideUser,
+            'canShareDirectory' => $this->canShare($request, $path),
         ]);
     }
 
@@ -159,11 +163,8 @@ class MediaController extends Controller
     {
         $path = Path::resolve($unsafePath);
 
-        $user = $request->user();
         $accessControlOverrideUser = User::getAccessControlOverrideUser($request);
-        if (!PathAccess::forRequest($request, $path)['']) {
-            abort(404);
-        }
+        PathAccess::forRequest($request)->ensureVisible($path, isDirectory: false);
 
         $filesystemPath = config('media.path').'/'.$path;
 
@@ -208,8 +209,7 @@ class MediaController extends Controller
             'scene' => $scene,
             'extractedText' => ($extractedText !== '') ? $extractedText : null,
             'accessControlOverrideUser' => $accessControlOverrideUser,
-            // Links are created with the user's own access, not one an admin is browsing as or a shared link.
-            'canShare' => !PathAccess::isGuest($request) && $user->getPathAccessInfo($path)[''],
+            'canShare' => $this->canShare($request, $path),
         ]);
     }
 
@@ -226,9 +226,7 @@ class MediaController extends Controller
         $path = $matches[1];
         $segment = ($matches[2] !== null) ? (int) $matches[2] : null;
 
-        if (!PathAccess::forRequest($request, $path)['']) {
-            abort(404);
-        }
+        PathAccess::forRequest($request)->ensureVisible($path, isDirectory: false);
 
         $filesystemPath = config('media.path').'/'.$path;
 
@@ -254,13 +252,13 @@ class MediaController extends Controller
 
         // TODO: Signed-in users can load any image by its ID, which can't be guessed but isn't checked against their
         //       access either. Guests only get the images of the files they've been shared.
-        if (PathAccess::isGuest($request)) {
-            $file = IndexedFile::query()
-                ->where(fn ($query) => $query->where('thumbnail', $id)->orWhere('filmstrip', $id))
-                ->with('directory')
-                ->first();
+        $pathAccess = PathAccess::forRequest($request);
+        if ($pathAccess->isGuest()) {
+            // Separately rather than OR-ed, so each uses its column's index.
+            $file = IndexedFile::query()->where('thumbnail', $id)->with('directory')->first()
+                ?? IndexedFile::query()->where('filmstrip', $id)->with('directory')->first();
 
-            if ($file === null || !$request->user()->getPathAccessInfo($file->getPath())['']) {
+            if ($file === null || !$pathAccess->allows($file->getPath())) {
                 abort(404);
             }
         }
@@ -339,6 +337,15 @@ class MediaController extends Controller
         }
 
         return $crumbs;
+    }
+
+    /**
+     * Whether to offer sharing the file or directory. Links are created with the user's own access, not one an admin is
+     * browsing as or a shared link, so this is the user's own; the dialog only offers public links with `can_share`.
+     */
+    private function canShare(Request $request, string $path): bool
+    {
+        return !PathAccess::isGuestRequest($request) && $request->user()->getPathAccessInfo($path)[''];
     }
 
     private function getSourceForPath(IndexedDirectory $indexedDirectory, array $accessControlInfo): DirectorySource

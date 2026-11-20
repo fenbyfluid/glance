@@ -2,20 +2,24 @@
 
 namespace App\Search;
 
-use App\Models\AccessControlEntry;
+use App\Auth\AccessRules;
 use Illuminate\Contracts\Database\Query\Builder;
 
 /**
- * The part of the media tree a search may return results from: the user's access control rules combined with an
- * optional "under this path" filter, expressed as SQL constraints so the allowed documents can be selected up front
- * (see FilterableSqliteEngine) rather than post-filtering the search results.
+ * The part of the media tree a search may return results from: the sets of access rules that apply to the request
+ * (see PathAccess) combined with an optional "under this path" filter, expressed as SQL constraints so the allowed
+ * documents can be selected up front (see FilterableSqliteEngine) rather than post-filtering the search results.
  *
- * Access semantics match SearchController's post-filter: the deepest rule that is the path or one of its ancestors
- * wins, and a path with no matching rule at all is denied. This is expressed as
+ * Access semantics match AccessRules (which SearchController's post-filter asks, through PathAccess): within a set, the
+ * deepest rule that is the path or one of its ancestors wins, and a path no rule covers is denied; a path is allowed
+ * if any set allows it. This is expressed as
  *
- *     allowed = OR over granted rules E: ( matches(E) AND NOT ( OR over any rules F under E: matches(F) ) )
+ *     allowed = OR over sets S: OR over granted rules E in S: ( matches(E) AND NOT ( OR over rules F in S under E: matches(F) ) )
  *
  * as a deeper matching rule either denies (so E must not win) or grants (and is then a witness in its own right).
+ *
+ * Rules select directories, so files shared on their own (by a link to the file) can't be selected through them: they
+ * are passed along as paths, for the caller to allow by document (see getFilePaths()).
  *
  * The constraints may only ever select a superset of what the post-filter allows if anything (it remains as the
  * authoritative check), as a superset only costs some wasted candidates, while a subset hides results.
@@ -26,72 +30,55 @@ use Illuminate\Contracts\Database\Query\Builder;
 final class SearchScope
 {
     /**
-     * @param  list<string>  $grantedPaths  Paths of rules that grant the user access.
-     * @param  list<string>  $rulePaths  Paths of all rules.
+     * @param  list<array{granted: list<string>, rules: list<string>}>  $sets  For each set of rules, the paths of the
+     *                                                                         rules that grant access and of all rules.
+     * @param  list<string>  $filePaths  Files allowed on their own.
      */
     private function __construct(
-        private readonly array $grantedPaths,
-        private readonly array $rulePaths,
+        private readonly array $sets,
+        private readonly array $filePaths,
         private readonly ?string $pathPrefix,
     ) {}
 
     /**
-     * @param  iterable<AccessControlEntry>  $entries  All entries, each with `users_count` set to whether the user is
-     *                                                 granted access by it (0 or 1).
+     * @param  list<AccessRules>  $ruleSets
+     * @param  list<string>  $filePaths  Files allowed on their own, as well as whatever the rules allow.
      * @param  string|null  $pathPrefix  Resolved path to restrict results to, null (or the root) for no restriction.
      */
-    public static function fromAccessControlEntries(iterable $entries, ?string $pathPrefix): self
+    public static function fromAccessRules(array $ruleSets, array $filePaths, ?string $pathPrefix): self
     {
         if ($pathPrefix === '') {
             $pathPrefix = null;
         }
 
-        $grants = [];
-        foreach ($entries as $entry) {
-            $grants[strval($entry->path)] = $entry->users_count > 0;
-        }
+        $sets = [];
+        foreach ($ruleSets as $ruleSet) {
+            $grantedPaths = [];
+            $rulePaths = [];
 
-        // Shallowest first, so each rule's ancestors have been decided before it.
-        uksort($grants, fn ($a, $b) => strlen($a) <=> strlen($b));
+            foreach ($ruleSet->getEffectiveRules() as [$path, $granted]) {
+                // Rules unrelated to the requested subtree can't affect anything in it.
+                if (!self::isRelevantTo($path, $pathPrefix)) {
+                    continue;
+                }
 
-        $grantedPaths = [];
-        $rulePaths = [];
-        $keptGrants = [];
-
-        foreach ($grants as $path => $granted) {
-            $path = strval($path);
-
-            // Drop rules that agree with the nearest ancestor rule (or the default deny), as they change nothing.
-            // Without this, e.g. grants nested under a root grant would force filtering for an unrestricted user.
-            $inherited = false;
-            $ancestor = $path;
-            while ($ancestor !== '') {
-                $slash = strrpos($ancestor, '/');
-                $ancestor = ($slash === false) ? '' : substr($ancestor, 0, $slash);
-                if (isset($keptGrants[$ancestor])) {
-                    $inherited = $keptGrants[$ancestor];
-                    break;
+                $rulePaths[] = $path;
+                if ($granted) {
+                    $grantedPaths[] = $path;
                 }
             }
 
-            if ($granted === $inherited) {
-                continue;
-            }
-
-            $keptGrants[$path] = $granted;
-
-            // Rules unrelated to the requested subtree can't affect anything in it.
-            if (!self::isRelevantTo($path, $pathPrefix)) {
-                continue;
-            }
-
-            $rulePaths[] = $path;
-            if ($granted) {
-                $grantedPaths[] = $path;
+            if (count($grantedPaths) > 0) {
+                $sets[] = ['granted' => $grantedPaths, 'rules' => $rulePaths];
             }
         }
 
-        return new self($grantedPaths, $rulePaths, $pathPrefix);
+        $filePaths = array_values(array_filter(
+            $filePaths,
+            fn (string $path) => $pathPrefix === null || AccessRules::isStrictlyUnder($path, $pathPrefix),
+        ));
+
+        return new self($sets, $filePaths, $pathPrefix);
     }
 
     /**
@@ -99,7 +86,7 @@ final class SearchScope
      */
     public function isEmpty(): bool
     {
-        return count($this->grantedPaths) === 0;
+        return count($this->sets) === 0 && count($this->filePaths) === 0;
     }
 
     /**
@@ -111,16 +98,28 @@ final class SearchScope
     }
 
     /**
-     * Constrain a query over directories to those in scope: the path filter directory or any below it, that the user
-     * has access to.
+     * Files in scope on their own, which aren't selected by applyToDirectories() (unless their directory is in scope
+     * anyway). Only ever a few: they come from the shared links in a session.
      *
-     * Files are in scope if their directory is: rules are only expected to control directories.
+     * @return list<string>
+     */
+    public function getFilePaths(): array
+    {
+        return $this->filePaths;
+    }
+
+    /**
+     * Constrain a query over directories to those in scope: the path filter directory or any below it, that the rules
+     * allow.
+     *
+     * Files are in scope if their directory is (or they're one of getFilePaths()): rules are only expected to control
+     * directories.
      *
      * @param  string  $pathColumn  Qualified column holding the directory's path.
      */
     public function applyToDirectories(Builder $query, string $pathColumn): void
     {
-        if ($this->isEmpty()) {
+        if (count($this->sets) === 0) {
             // Callers should check isEmpty() first, but never fail open.
             $query->whereRaw('1 = 0');
 
@@ -136,35 +135,40 @@ final class SearchScope
         }
 
         $query->where(function (Builder $query) use ($pathColumn) {
-            foreach ($this->grantedPaths as $grantedPath) {
-                // isAccessUnrestricted() returning false guarantees every term here has at least one constraint.
-                // An empty term would be silently dropped by the query builder, which would be very wrong in an OR.
-                $query->orWhere(function (Builder $query) use ($grantedPath, $pathColumn) {
-                    if (!$this->coversPrefix($grantedPath)) {
-                        $this->whereMatches($query, $grantedPath, $pathColumn);
-                    }
+            foreach ($this->sets as $set) {
+                foreach ($set['granted'] as $grantedPath) {
+                    // isAccessUnrestricted() returning false guarantees every term here has at least one constraint.
+                    // An empty term would be silently dropped by the query builder, which would be very wrong in an OR.
+                    $query->orWhere(function (Builder $query) use ($set, $grantedPath, $pathColumn) {
+                        if (!$this->coversPrefix($grantedPath)) {
+                            $this->whereMatches($query, $grantedPath, $pathColumn);
+                        }
 
-                    $deeperPaths = $this->rulesUnder($grantedPath);
-                    if (count($deeperPaths) > 0) {
-                        $query->whereNot(function (Builder $query) use ($deeperPaths, $pathColumn) {
-                            foreach ($deeperPaths as $deeperPath) {
-                                $this->whereMatches($query, $deeperPath, $pathColumn, 'or');
-                            }
-                        });
-                    }
-                });
+                        $deeperPaths = self::rulesUnder($set['rules'], $grantedPath);
+                        if (count($deeperPaths) > 0) {
+                            $query->whereNot(function (Builder $query) use ($deeperPaths, $pathColumn) {
+                                foreach ($deeperPaths as $deeperPath) {
+                                    $this->whereMatches($query, $deeperPath, $pathColumn, 'or');
+                                }
+                            });
+                        }
+                    });
+                }
             }
         });
     }
 
     /**
-     * Whether access rules alone allow everything within the path filter.
+     * Whether access rules alone allow everything within the path filter: some set has a rule that covers it, with
+     * nothing deeper in the set.
      */
     private function isAccessUnrestricted(): bool
     {
-        foreach ($this->grantedPaths as $grantedPath) {
-            if ($this->coversPrefix($grantedPath) && count($this->rulesUnder($grantedPath)) === 0) {
-                return true;
+        foreach ($this->sets as $set) {
+            foreach ($set['granted'] as $grantedPath) {
+                if ($this->coversPrefix($grantedPath) && count(self::rulesUnder($set['rules'], $grantedPath)) === 0) {
+                    return true;
+                }
             }
         }
 
@@ -185,33 +189,26 @@ final class SearchScope
             return false;
         }
 
-        return $this->pathPrefix === $path || str_starts_with($this->pathPrefix, $path.'/');
+        return AccessRules::isAtOrUnder($this->pathPrefix, $path);
     }
 
     /**
+     * @param  list<string>  $rulePaths
      * @return list<string> Rule paths strictly below the given path.
      */
-    private function rulesUnder(string $path): array
+    private static function rulesUnder(array $rulePaths, string $path): array
     {
-        return array_values(array_filter($this->rulePaths, function (string $rulePath) use ($path) {
-            if ($rulePath === $path) {
-                return false;
-            }
-
-            return $path === '' || str_starts_with($rulePath, $path.'/');
-        }));
+        return array_values(array_filter($rulePaths, fn (string $rulePath) => AccessRules::isStrictlyUnder($rulePath, $path)));
     }
 
     private static function isRelevantTo(string $path, ?string $pathPrefix): bool
     {
-        if ($pathPrefix === null || $path === '') {
+        if ($pathPrefix === null) {
             return true;
         }
 
         // The rule is the filter path, an ancestor of it, or within it.
-        return $path === $pathPrefix
-            || str_starts_with($pathPrefix, $path.'/')
-            || str_starts_with($path, $pathPrefix.'/');
+        return AccessRules::isAtOrUnder($pathPrefix, $path) || AccessRules::isStrictlyUnder($path, $pathPrefix);
     }
 
     /**

@@ -2,11 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Auth\AccessRules;
+use App\Auth\PathAccess;
 use App\Models\AccessControlEntry;
 use App\Models\FileFingerprint;
 use App\Models\IndexedDirectory;
 use App\Models\IndexedFile;
 use App\Models\IndexedFileText;
+use App\Models\SharedLink;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +23,8 @@ class SearchTest extends TestCase
     use RefreshDatabase;
 
     private string $indexPath;
+
+    private string $mediaPath;
 
     /** @var array<string, int> */
     private array $directoryIds = [];
@@ -254,6 +259,125 @@ class SearchTest extends TestCase
         $this->assertSame((int) $log, (int) $checkpointed);
     }
 
+    public function test_a_guest_searches_only_what_is_shared_with_them(): void
+    {
+        $creator = $this->userWithRootAccess(['can_share' => true]);
+        // The creator can't see Private, so neither can anyone through their link.
+        AccessControlEntry::create(['path' => 'Shared/Private']);
+
+        $this->addText('Shared', 'a.txt', 'a needle');
+        $this->addText('Shared/Deeper', 'b.txt', 'a needle');
+        $this->addText('Shared/Private', 'c.txt', 'a needle');
+        $this->addText('Outside', 'd.txt', 'a needle');
+        $this->addText('Other', 'e.txt', 'a needle');
+        $this->addText('Other', 'f.txt', 'a needle');
+        $this->buildIndexes();
+
+        $this->openLink($creator, 'Shared', isDirectory: true);
+        $this->openLink($creator, 'Other/e.txt', isDirectory: false);
+
+        $this->assertSame(['a.txt', 'b.txt', 'e.txt'], $this->resultNames($this->getJson('/_search/content/needle')->assertOk()->json('results')));
+        $this->assertSame(['a.txt', 'b.txt'], $this->resultNames($this->getJson('/_search/content/needle?path=Shared')->json('results')));
+        $this->assertSame(['e.txt'], $this->resultNames($this->getJson('/_search/content/needle?path=Other')->json('results')));
+        $this->assertSame([], $this->getJson('/_search/content/needle?path=Outside')->json('results'));
+
+        // Name search, of files and directories alike.
+        $this->assertSame(['a.txt', 'b.txt', 'e.txt'], $this->resultNames($this->getJson('/_search/name/txt')->json('results')));
+        $this->assertSame(['Deeper'], $this->resultNames($this->getJson('/_search/name/Deeper')->json('results')));
+        $this->assertSame([], $this->getJson('/_search/name/Private')->json('results'));
+
+        // A guest sees everything through links, so nothing is marked.
+        $this->assertSame([false], array_unique(array_column($this->getJson('/_search/content/needle')->json('results'), 'shared')));
+    }
+
+    public function test_signed_in_searches_cover_shared_directories_too_marked(): void
+    {
+        $creator = $this->userWithRootAccess(['can_share' => true]);
+        $user = User::factory()->create();
+        $this->grantAccess($user, 'Mine');
+
+        $this->addText('Mine', 'a.txt', 'a needle');
+        $this->addText('Shared', 'b.txt', 'a needle');
+        $this->addText('Outside', 'c.txt', 'a needle');
+        $this->buildIndexes();
+
+        $this->actingAs($user);
+        $this->assertSame(['a.txt'], $this->resultNames($this->getJson('/_search/content/needle')->json('results')));
+
+        $this->openLink($creator, 'Shared', isDirectory: true);
+
+        $results = $this->getJson('/_search/content/needle')->assertOk()->json('results');
+        $this->assertSame(['a.txt' => false, 'b.txt' => true], array_column($results, 'shared', 'name'));
+    }
+
+    public function test_guest_searches_are_throttled(): void
+    {
+        $creator = $this->userWithRootAccess(['can_share' => true]);
+        $this->buildIndexes();
+        $this->openLink($creator, 'Shared', isDirectory: true);
+
+        for ($i = 0; $i < 30; $i++) {
+            $this->getJson('/_search/name/anything')->assertOk();
+        }
+        $this->getJson('/_search/name/anything')->assertTooManyRequests();
+
+        // Signed-in users aren't.
+        $this->actingAs($creator);
+        for ($i = 0; $i < 31; $i++) {
+            $this->getJson('/_search/name/anything')->assertOk();
+        }
+    }
+
+    /**
+     * The search scope's SQL and PathAccess implement the same rules separately (one up front in the index query, one
+     * as the check on each result), so they must agree on every directory.
+     */
+    public function test_the_search_scope_selects_exactly_the_directories_path_access_allows(): void
+    {
+        $paths = ['', 'A', 'A/B', 'A/B/C', 'A/B/C/D', 'A/E', 'A/E/F', 'AB', 'G', 'G/H', 'G/H/I', 'G/J', '42', '42/7', '42/7/3387', 'K_%'];
+        foreach ($paths as $path) {
+            $this->directoryId($path);
+        }
+
+        $rules = fn (array $rules) => AccessRules::fromRules(array_map(null, array_map(strval(...), array_keys($rules)), array_values($rules)));
+
+        $cases = [
+            'own rules only' => new PathAccess($rules(['A' => true, 'A/B' => false, 'A/B/C' => true, '42/7' => true])),
+            'nothing' => new PathAccess(AccessRules::none()),
+            'own and links' => new PathAccess(
+                own: $rules(['A/E' => true]),
+                linked: [
+                    $rules(['' => true, 'G/H/I' => false])->limitedTo('G'),
+                    $rules(['' => true, 'A/B' => false, 'A/B/C' => true])->limitedTo('A'),
+                    AccessRules::forPath('42/7/file.txt'),
+                ],
+                linkedFilePaths: ['42/7/file.txt'],
+            ),
+            'guest with a root link' => new PathAccess(
+                own: AccessRules::none(),
+                linked: [$rules(['' => true, 'K_%' => false, '42' => false, '42/7/3387' => true])->limitedTo('')],
+                isGuest: true,
+            ),
+        ];
+
+        foreach ($cases as $name => $pathAccess) {
+            foreach ([null, 'A', 'A/B', 'G', '42/7', 'AB'] as $pathPrefix) {
+                $scope = $pathAccess->searchScope($pathPrefix);
+
+                $query = IndexedDirectory::query();
+                $scope->applyToDirectories($query, 'indexed_directories.path');
+                $selected = $query->pluck('path')->map(strval(...))->sort()->values()->all();
+
+                $expected = collect($paths)
+                    ->filter(fn (string $path) => $pathPrefix === null || AccessRules::isAtOrUnder($path, $pathPrefix))
+                    ->filter(fn (string $path) => $pathAccess->allows($path))
+                    ->sort()->values()->all();
+
+                $this->assertSame($expected, $selected, "$name, under ".($pathPrefix ?? 'the root'));
+            }
+        }
+    }
+
     /**
      * Index everything in the database, as the application does via the indexing jobs.
      */
@@ -266,6 +390,34 @@ class SearchTest extends TestCase
 
             $class::all()->searchable();
         }
+    }
+
+    /**
+     * Open a link to the path as the current visitor (a guest, unless acting as a user). Links check that what they
+     * point at exists, so it's made on disk too.
+     */
+    private function openLink(User $creator, string $path, bool $isDirectory): void
+    {
+        if (!isset($this->mediaPath)) {
+            $this->mediaPath = $this->indexPath.'/media';
+            config(['media.path' => $this->mediaPath]);
+        }
+
+        if ($isDirectory) {
+            File::ensureDirectoryExists($this->mediaPath.'/'.$path);
+        } else {
+            File::ensureDirectoryExists(dirname($this->mediaPath.'/'.$path));
+            file_put_contents($this->mediaPath.'/'.$path, '');
+        }
+
+        $link = SharedLink::create([
+            'user_id' => $creator->id,
+            'path' => $path,
+            'is_directory' => $isDirectory,
+            'expires_at' => now()->addDay(),
+        ]);
+
+        $this->get(route('shared-link.show', ['token' => $link->token], false))->assertOk();
     }
 
     private function directoryId(string $path): int

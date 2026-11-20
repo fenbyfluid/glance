@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Auth\SharedLinkGrants;
 use App\Media\FileDetails;
+use App\Media\MediaContentKind;
 use App\Models\IndexedFile;
 use App\Models\SharedLink;
 use App\Models\User;
@@ -22,9 +23,9 @@ class SharedLinkController extends Controller
 {
     /**
      * Opening a link: it's recorded in the session, which lets the visitor (signed in or not) in to the file's info
-     * page and everything it loads. Answered with a page rather than a redirect, so link previews work: chat apps
-     * generally don't keep the session cookie across a redirect, so would end up at the login page, but they do read
-     * the page's Open Graph tags. Browsers are forwarded straight on.
+     * page (or the directory's listing) and everything it loads. Answered with a page rather than a redirect, so link
+     * previews work: chat apps generally don't keep the session cookie across a redirect, so would end up at the login
+     * page, but they do read the page's Open Graph tags. Browsers are forwarded straight on.
      */
     public function show(Request $request, string $token): Response
     {
@@ -32,11 +33,25 @@ class SharedLinkController extends Controller
 
         SharedLinkGrants::add($request, $link);
 
+        // TODO: A collage of the directory's thumbnails would make a good preview image, along with being the
+        //       directory's thumbnail in listings.
+        if ($link->is_directory) {
+            return response()->view('shared-links.show', [
+                'title' => $link->getName(),
+                'description' => 'Shared directory',
+                'linkUrl' => $link->url(),
+                'previewUrl' => null,
+                'targetUrl' => media_url($link->path.'/'),
+            ]);
+        }
+
         $pathInfo = new \SplFileInfo(config('media.path').'/'.$link->path);
         $fileEntry = $this->findCurrentFileEntry($link->path, $pathInfo);
         $details = new FileDetails($pathInfo, $fileEntry);
 
-        $durationMs = $fileEntry?->media_info?->durationMs;
+        // ffprobe gives still images a duration too (a frame's worth), which would show as "0:00".
+        $hasDuration = in_array($details->kind, [MediaContentKind::Audio, MediaContentKind::Video], true);
+        $durationMs = $hasDuration ? $fileEntry?->media_info?->durationMs : null;
 
         return response()->view('shared-links.show', [
             'title' => basename($link->path),
@@ -57,6 +72,9 @@ class SharedLinkController extends Controller
     public function preview(string $token): Response
     {
         $link = $this->findUsableLink($token);
+        if ($link->is_directory) {
+            abort(404);
+        }
 
         $pathInfo = new \SplFileInfo(config('media.path').'/'.$link->path);
         $thumbnail = $this->findCurrentFileEntry($link->path, $pathInfo)?->thumbnail;
@@ -73,20 +91,22 @@ class SharedLinkController extends Controller
 
         $jpeg = Vips\Image::newFromFile($thumbnailPath)->writeToBuffer('.jpg', ['Q' => 85]);
 
-        // Short-lived, so a revoked link's preview doesn't hang around in caches for long.
+        // Short-lived, so a revoked link's preview doesn't hang around in caches for long. The length is given as
+        // some link previewers check an image's size before fetching it, and won't take one sent without it.
         return response($jpeg, 200, [
             'Content-Type' => 'image/jpeg',
+            'Content-Length' => (string) strlen($jpeg),
             'Cache-Control' => 'public, max-age=3600',
         ]);
     }
 
     /**
-     * The active links to a file, for the share dialog: the user's own, or everyone's for admins.
+     * The active links to a file or directory, for the share dialog: the user's own, or everyone's for admins.
      */
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        $path = $this->validatedSharablePath($request);
+        [$path] = $this->validatedSharablePath($request);
 
         $links = SharedLink::active()
             ->where('path', $path)
@@ -105,7 +125,7 @@ class SharedLinkController extends Controller
         Gate::authorize('create', SharedLink::class);
 
         $user = $request->user();
-        $path = $this->validatedSharablePath($request);
+        [$path, $isDirectory] = $this->validatedSharablePath($request);
 
         $validated = $request->validate([
             'note' => ['nullable', 'string', 'max:255'],
@@ -115,6 +135,7 @@ class SharedLinkController extends Controller
         $link = SharedLink::create([
             'user_id' => $user->getKey(),
             'path' => $path,
+            'is_directory' => $isDirectory,
             'note' => $validated['note'] ?? null,
             'expires_at' => now()->addDays((int) $validated['expires_in']),
         ]);
@@ -193,22 +214,31 @@ class SharedLinkController extends Controller
     }
 
     /**
-     * The requested file, which the user must be able to see with their own access (not one an admin is browsing as,
-     * nor a shared link), since links let others in through their creator's access.
+     * The requested file or directory, which the user must be able to see with their own access (not one an admin is
+     * browsing as, nor a shared link), since links let others in through their creator's access. The root is an empty
+     * path, which arrives as null.
+     *
+     * @return array{string, bool} The resolved path, and whether it's a directory.
      */
-    private function validatedSharablePath(Request $request): string
+    private function validatedSharablePath(Request $request): array
     {
         $validated = $request->validate([
-            'path' => ['required', 'string'],
+            'path' => ['present', 'nullable', 'string'],
         ]);
 
-        $path = Path::resolve($validated['path']);
+        $path = Path::resolve($validated['path'] ?? '');
 
-        if (!$request->user()->getPathAccessInfo($path)[''] || !is_file(config('media.path').'/'.$path)) {
+        if (!$request->user()->getPathAccessInfo($path)['']) {
             abort(404);
         }
 
-        return $path;
+        $filesystemPath = config('media.path').'/'.$path;
+        $isDirectory = is_dir($filesystemPath);
+        if (!$isDirectory && !is_file($filesystemPath)) {
+            abort(404);
+        }
+
+        return [$path, $isDirectory];
     }
 
     /**

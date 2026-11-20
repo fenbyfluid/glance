@@ -30,7 +30,7 @@
         @can('create', \App\Models\SharedLink::class)
         <section>
             <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ __('Public links') }}</h3>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ __('Anyone with a public link can see this file until it expires or is revoked.') }}</p>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ __('Anyone with a public link can see what\'s shared (for a directory, everything in it) until the link expires or is revoked.') }}</p>
 
             <template x-if="error">
                 <p class="mt-3 text-sm text-red-600 dark:text-red-400" x-text="error"></p>
@@ -41,7 +41,7 @@
             </template>
 
             <template x-if="!loading && links.length === 0">
-                <p class="mt-3 text-sm text-gray-500 dark:text-gray-400">{{ __('There are no public links to this file.') }}</p>
+                <p class="mt-3 text-sm text-gray-500 dark:text-gray-400">{{ __('There are no public links to this yet.') }}</p>
             </template>
 
             <ul class="mt-3 space-y-3">

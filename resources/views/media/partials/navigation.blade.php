@@ -22,8 +22,25 @@
             @endif
         @endforeach
     </ol>
-    {{-- Search isn't open to visitors who only have shared links. --}}
-    @unless(Auth::user() instanceof \App\Auth\SharedLinkGuest)
+    {{-- Sharing the directory being listed (see share.js). Not offered to guests, nor for what the user only sees through
+         someone else's link. --}}
+    @if($canShareDirectory ?? false)
+        <div class="flex items-center shrink-0">
+            <button
+                type="button"
+                x-data
+                x-on:click="window.dispatchEvent(new CustomEvent('open-share-dialog', { detail: { path: @js($path), name: @js($path !== '' ? basename($path) : config('app.name')), internalUrl: window.location.origin + window.location.pathname } }))"
+                class="size-6 shrink-0 text-gray-400 cursor-pointer"
+                title="{{ __('Share this directory') }}"
+                aria-label="{{ __('Share this directory') }}"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M15.75 4.5a3 3 0 1 1 .825 2.066l-8.421 4.679a3.002 3.002 0 0 1 0 1.51l8.421 4.679a3 3 0 1 1-.729 1.31l-8.421-4.678a3 3 0 1 1 0-4.132l8.421-4.679a3 3 0 0 1-.096-.755Z" clip-rule="evenodd" />
+                </svg>
+            </button>
+        </div>
+    @endif
+    {{-- Guests can search too: search covers what's shared with them (see PathAccess::searchScope()). --}}
     <div x-data class="flex items-center shrink-0">
         <a href="#" x-on:click.prevent="$store.searchModal.toggle(); $store.searchModal.open && $nextTick(() => document.getElementById('query').focus())" class="size-6 shrink-0 text-base text-gray-400 select-none sm:text-sm/6">
             <svg x-show="!$store.searchModal.open" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
@@ -57,5 +74,4 @@
             </div>
         </template>
     </div>
-    @endunless
 </div>

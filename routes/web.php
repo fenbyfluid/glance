@@ -15,7 +15,7 @@ Route::get('/_get_remote_ip', function (Request $request) {
     return response($request->ip(), 200, ['Content-Type' => 'text/plain']);
 })->name('utility.discover_ip');
 
-// Public: records the link in the session and forwards to the file's info page (see SharedLinkGuard).
+// Public: records the link in the session and forwards to the file's info page or the directory (see SharedLinkGuard).
 Route::middleware('throttle:60,1')->group(function () {
     Route::get('/_s/{token}', [SharedLinkController::class, 'show'])
         ->where('token', '[A-Za-z0-9]+')
@@ -55,17 +55,18 @@ Route::middleware(['auth', 'activated'])->group(function () {
             'index', 'store', 'destroy',
         ]);
     });
+});
 
-    Route::prefix('_search')->name('search.')->group(function () {
+// What shared files and directories need, so guests with shared links in their session get in too. The controllers
+// check every path (PathAccess) and send a guest to the login page for anything its links don't cover.
+Route::middleware(['auth:web,shared', 'activated'])->group(function () {
+    // Guests can search what's shared with them, but are throttled (see AppServiceProvider).
+    Route::prefix('_search')->name('search.')->middleware('throttle:search')->group(function () {
         Route::get('/', [SearchController::class, 'index'])->name('index');
         Route::get('/name/{query?}', [SearchController::class, 'name'])->name('name');
         Route::get('/content/{query?}', [SearchController::class, 'content'])->name('content');
     });
-});
 
-// What a shared file needs, so guests with shared links in their session get in too. The controller checks every path
-// (PathAccess) and sends a guest to the login page for anything its links don't cover.
-Route::middleware(['auth:web,shared', 'activated'])->group(function () {
     Route::get('/_info/{path?}', [MediaController::class, 'info'])
         ->where('path', '.*')
         ->name('media.info');

@@ -8,8 +8,8 @@ use Illuminate\Support\Collection;
 
 /**
  * Who a visitor is when they aren't signed in but have opened shared links (see SharedLinkGuard). Never saved: it only
- * exists for the request, and can see exactly the paths of its links. Everything else that asks about users treats it
- * as a user without any rules, which since access is denied by default sees nothing.
+ * exists for the request. It has no access rules of its own (so asking it directly, rather than PathAccess, finds that it
+ * can see nothing, as access is denied by default): what it sees comes from its links, through PathAccess.
  */
 class SharedLinkGuest extends User
 {
@@ -41,11 +41,6 @@ class SharedLinkGuest extends User
     public function getLinks(): Collection
     {
         return $this->links;
-    }
-
-    public function getPathAccessInfo(string $path): array
-    {
-        return ['' => $this->links->contains(fn (SharedLink $link) => $link->path === $path)];
     }
 
     public function save(array $options = []): bool

@@ -15,11 +15,14 @@ final readonly class DocumentFilter
      * @param  list<int>|null  $documentIds  Allowed documents, or null for any.
      * @param  list<int>|null  $directoryIds  Directories whose documents are allowed, or null for any.
      * @param  list<string>|null  $kinds  Allowed document kinds, or null for any.
+     * @param  list<int>  $extraDocumentIds  Documents allowed whatever their directory (e.g. files shared on their
+     *                                       own), still subject to the other restrictions. Only used with directoryIds.
      */
     public function __construct(
         public ?array $documentIds = null,
         public ?array $directoryIds = null,
         public ?array $kinds = null,
+        public array $extraDocumentIds = [],
     ) {}
 
     /**
@@ -28,7 +31,7 @@ final readonly class DocumentFilter
     public function isEmpty(): bool
     {
         return ($this->documentIds !== null && count($this->documentIds) === 0)
-            || ($this->directoryIds !== null && count($this->directoryIds) === 0)
+            || ($this->directoryIds !== null && count($this->directoryIds) === 0 && count($this->extraDocumentIds) === 0)
             || ($this->kinds !== null && count($this->kinds) === 0);
     }
 

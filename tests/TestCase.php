@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Testing\TestResponse;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -41,6 +42,19 @@ abstract class TestCase extends BaseTestCase
     protected function grantAccess(User $user, string $path): void
     {
         AccessControlEntry::firstOrCreate(['path' => $path])->users()->attach($user);
+    }
+
+    /**
+     * Authenticate::authenticate() makes the guard it used the default for the rest of the process, which in tests
+     * outlives the request, so a guest request (the shared link guard) would leave later requests looking at it.
+     */
+    public function call($method, $uri, $parameters = [], $cookies = [], $files = [], $server = [], $content = null): TestResponse
+    {
+        try {
+            return parent::call($method, $uri, $parameters, $cookies, $files, $server, $content);
+        } finally {
+            $this->app['auth']->shouldUse('web');
+        }
     }
 
     protected function tearDown(): void

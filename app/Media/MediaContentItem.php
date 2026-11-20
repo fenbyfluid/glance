@@ -18,6 +18,11 @@ class MediaContentItem
         }
     }
 
+    /**
+     * Whether the item is only visible through a shared link, not the user's own access (see PathAccess), so is marked.
+     */
+    public bool $isOnlyThroughLinks = false;
+
     public function __construct(
         public readonly string $path,
         public readonly int $mtime,

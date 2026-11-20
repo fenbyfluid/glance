@@ -2,7 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Auth\AccessRules;
+use App\Auth\PathAccess;
 use App\Auth\SharedLinkGrants;
+use App\Media\MediaInfo;
 use App\Models\AccessControlEntry;
 use App\Models\FileFingerprint;
 use App\Models\IndexedDirectory;
@@ -12,10 +15,10 @@ use App\Models\User;
 use App\Utilities\Path;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
-use Illuminate\Testing\TestResponse;
 use Jcupitt\Vips;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
@@ -47,19 +50,6 @@ class SharedLinkTest extends TestCase
         File::deleteDirectory($this->mediaPath);
 
         parent::tearDown();
-    }
-
-    /**
-     * Authenticate::authenticate() makes the guard it used the default for the rest of the process, which in tests
-     * outlives the request, so a guest request would leave later requests looking at the shared link guard.
-     */
-    public function call($method, $uri, $parameters = [], $cookies = [], $files = [], $server = [], $content = null): TestResponse
-    {
-        try {
-            return parent::call($method, $uri, $parameters, $cookies, $files, $server, $content);
-        } finally {
-            $this->app['auth']->shouldUse('web');
-        }
     }
 
     public function test_opening_a_link_records_it_and_forwards_to_the_info_page(): void
@@ -95,23 +85,178 @@ class SharedLinkTest extends TestCase
         $this->get($this->linkPath($link))->assertNotFound()->assertSessionMissing(SharedLinkGrants::SESSION_KEY);
     }
 
-    public function test_a_guest_gets_the_shared_file_and_nothing_else(): void
+    public function test_a_guest_gets_the_shared_file_and_the_way_down_to_it(): void
     {
+        File::ensureDirectoryExists($this->mediaPath.'/Elsewhere');
+        $this->indexFile('Some/Dir/file.mp4');
+        $this->indexFile('Some/Dir/other.mp4');
+
         $link = $this->createLink();
         $this->get($this->linkPath($link))->assertOk();
 
         $this->get(media_url('Some/Dir/file.mp4'))->assertOk();
 
+        // Like a restricted user, the directories above list only the way down to it.
+        $this->get($this->listingUrl('/'))->assertOk()->assertSee(media_url('Some/'))->assertDontSee(media_url('Elsewhere/'));
+        $this->get($this->listingUrl('Some/Dir/'))
+            ->assertOk()
+            ->assertSee(media_url('Some/Dir/file.mp4'))
+            ->assertDontSee(media_url('Some/Dir/other.mp4'))
+            ->assertDontSee('data-shareable', false)
+            ->assertDontSee('data-only-through-links', false)
+            ->assertDontSee(__('Share this directory'));
+
         // Everything else sends the guest to sign in, whether it exists or not.
         $this->get(media_url('Some/Dir/other.mp4'))->assertRedirect(route('login'));
         $this->get(media_url('Some/Dir/missing.mp4'))->assertRedirect(route('login'));
-        $this->get(media_url('Some/Dir/'))->assertRedirect(route('login'));
-        $this->get(media_url('/'))->assertRedirect(route('login'));
+        $this->get($this->listingUrl('Elsewhere/'))->assertRedirect(route('login'));
+        $this->get($this->listingUrl('Missing/'))->assertRedirect(route('login'));
         $this->get(media_info_url('Some/Dir/other.mp4'))->assertRedirect(route('login'));
         $this->get(route('media.stream', ['path' => 'Some/Dir/other.mp4.m3u8']))->assertRedirect(route('login'));
-        $this->get(route('search.index'))->assertRedirect(route('login'));
         $this->get(route('profile.edit'))->assertRedirect(route('login'));
         $this->getJson(route('shared-links.index', ['path' => 'Some/Dir/file.mp4']))->assertUnauthorized();
+
+        // Search is open to guests, over what's shared with them (see SearchTest).
+        $this->get(route('search.index'))->assertOk();
+    }
+
+    public function test_a_directory_link_shares_everything_its_creator_can_see_in_it(): void
+    {
+        $this->createFiles(['Some/Dir/Sub/deep.mp4', 'Some/Dir/Private/secret.mp4', 'Some/Sibling/file.mp4']);
+        $this->indexFiles(['Some/Dir/file.mp4', 'Some/Dir/other.mp4', 'Some/Dir/Sub/deep.mp4', 'Some/Dir/Private/secret.mp4', 'Some/Sibling/file.mp4']);
+
+        // The creator can't see Private, so neither can anyone through their link.
+        AccessControlEntry::create(['path' => 'Some/Dir/Private']);
+        $link = $this->createLink(['path' => 'Some/Dir', 'is_directory' => true]);
+
+        $this->get($this->linkPath($link))
+            ->assertOk()
+            ->assertSee('<meta http-equiv="refresh" content="0; url='.e(media_url('Some/Dir/')).'">', false)
+            ->assertSee('<meta property="og:title" content="Dir">', false)
+            ->assertDontSee('og:image');
+        $this->get(route('shared-link.preview', ['token' => $link->token]))->assertNotFound();
+
+        $this->get($this->listingUrl('Some/Dir/'))
+            ->assertOk()
+            ->assertSee(media_url('Some/Dir/file.mp4'))
+            ->assertSee(media_url('Some/Dir/other.mp4'))
+            ->assertSee(media_url('Some/Dir/Sub/'))
+            ->assertDontSee(media_url('Some/Dir/Private/'));
+        $this->get($this->listingUrl('Some/'))->assertOk()->assertSee(media_url('Some/Dir/'))->assertDontSee(media_url('Some/Sibling/'));
+        $this->get(media_url('Some/Dir/Sub/deep.mp4'))->assertOk();
+        $this->get(media_info_url('Some/Dir/Sub/deep.mp4'))->assertOk();
+
+        $this->get($this->listingUrl('Some/Dir/Private/'))->assertRedirect(route('login'));
+        $this->get(media_url('Some/Dir/Private/secret.mp4'))->assertRedirect(route('login'));
+        $this->get(media_url('Some/Sibling/file.mp4'))->assertRedirect(route('login'));
+    }
+
+    public function test_the_root_can_be_shared(): void
+    {
+        $this->indexFile('Some/Dir/file.mp4');
+
+        $link = $this->createLink(['path' => '', 'is_directory' => true]);
+
+        $this->get($this->linkPath($link))
+            ->assertOk()
+            ->assertSee('<meta property="og:title" content="'.e(config('app.name')).'">', false);
+
+        $this->get($this->listingUrl('/'))->assertOk()->assertSee(media_url('Some/'));
+        $this->get(media_url('Some/Dir/file.mp4'))->assertOk();
+    }
+
+    public function test_a_directory_link_stops_working_when_the_directory_moves_or_its_creator_loses_access(): void
+    {
+        $link = $this->createLink(['path' => 'Some/Dir', 'is_directory' => true]);
+        $this->assertNull($link->getUnusableReason());
+
+        AccessControlEntry::create(['path' => 'Some']);
+        $this->assertSame('Creator no longer has access to the directory', $link->fresh()->load('user')->getUnusableReason());
+        AccessControlEntry::where('path', 'Some')->delete();
+
+        rename($this->mediaPath.'/Some/Dir', $this->mediaPath.'/Some/Moved');
+        $this->assertSame('Directory has been moved or deleted', $link->fresh()->load('user')->getUnusableReason());
+        $this->get($this->linkPath($link))->assertNotFound();
+    }
+
+    public function test_a_signed_in_user_sees_shared_directories_in_their_own_tree_marked(): void
+    {
+        $this->createFiles(['Mine/file.mp4']);
+        $this->indexFiles(['Mine/file.mp4', 'Some/Dir/file.mp4']);
+
+        $user = User::factory()->canShare()->create();
+        $this->grantAccess($user, 'Mine');
+        $this->actingAs($user);
+
+        $link = $this->createLink(['path' => 'Some/Dir', 'is_directory' => true]);
+        $this->get($this->linkPath($link))->assertOk();
+
+        $root = $this->get($this->listingUrl('/'))->assertOk()->assertSee(media_url('Mine/'))->assertSee(media_url('Some/'));
+        $this->assertSame(1, substr_count($root->getContent(), 'data-only-through-links'));
+
+        // What's only seen through the link can't be shared on.
+        $this->get($this->listingUrl('Some/Dir/'))
+            ->assertOk()
+            ->assertSee('data-only-through-links', false)
+            ->assertDontSee('data-shareable', false)
+            ->assertDontSee(__('Share this directory'));
+        $this->postJson(route('shared-links.store'), ['path' => 'Some/Dir', 'expires_in' => 7])->assertNotFound();
+
+        $this->get($this->listingUrl('Mine/'))
+            ->assertOk()
+            ->assertDontSee('data-only-through-links', false)
+            ->assertSee('data-shareable', false)
+            ->assertSee(__('Share this directory'));
+
+        // Nothing anywhere says whose link it is.
+        $this->get($this->listingUrl('/'))->assertDontSee($link->user->username);
+    }
+
+    public function test_a_shared_file_in_a_huge_directory_costs_the_same_as_in_a_small_one(): void
+    {
+        $this->indexFile('Some/Dir/file.mp4');
+        $link = $this->createLink();
+        $this->get($this->linkPath($link))->assertOk();
+
+        $directoryId = IndexedDirectory::where('path', 'Some/Dir')->value('id');
+        $fingerprintId = FileFingerprint::findOrCreateForHash(str_repeat('ab', 8))->id;
+        $queryCounts = [];
+
+        foreach ([20, 2000] as $count) {
+            DB::table('indexed_files')->where('directory_id', $directoryId)->where('name', 'like', 'filler-%')->delete();
+            foreach (array_chunk(range(1, $count), 500) as $chunk) {
+                DB::table('indexed_files')->insert(array_map(fn (int $i) => [
+                    'directory_id' => $directoryId,
+                    'name' => "filler-$i.mp4",
+                    'kind' => 'video',
+                    'inode' => $i,
+                    'mtime' => 1,
+                    'size' => 1,
+                    'mime_type' => 'video/mp4',
+                    'fingerprint_id' => $fingerprintId,
+                ], $chunk));
+            }
+
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+            $this->get($this->listingUrl('Some/Dir/'))
+                ->assertOk()
+                ->assertSee(media_url('Some/Dir/file.mp4'))
+                ->assertDontSee('filler-');
+            $queryCounts[$count] = count(DB::getQueryLog());
+            DB::disableQueryLog();
+        }
+
+        // The access info has one entry per rule below the directory, not per file in it, so the listing is filtered
+        // by name in a single query however many files there are.
+        $this->assertSame($queryCounts[20], $queryCounts[2000]);
+
+        $guestAccess = new PathAccess(AccessRules::none(), [$link->getAccessRules()], isGuest: true);
+        $this->assertSame(['' => false, 'file.mp4' => true], $guestAccess->info('Some/Dir'));
+
+        // And for someone who can see the directory anyway, the link adds nothing to filter by.
+        $ownAccess = new PathAccess(AccessRules::forUser($link->user), [$link->getAccessRules()]);
+        $this->assertSame(['' => true], $ownAccess->info('Some/Dir'));
     }
 
     public function test_without_a_link_a_visitor_is_sent_to_sign_in(): void
@@ -130,7 +275,7 @@ class SharedLinkTest extends TestCase
             ->assertSee('file.mp4')
             ->assertSee(route('login'))
             ->assertDontSee('data-share-path', false)
-            ->assertDontSee('id="query"', false)
+            ->assertSee('id="query"', false)
             ->assertDontSee('share-dialog-title', false)
             ->assertDontSee(route('profile.edit'));
     }
@@ -144,11 +289,33 @@ class SharedLinkTest extends TestCase
         file_put_contents(Path::makeThumbnailPath($sharedThumbnail), 'image');
         file_put_contents(Path::makeThumbnailPath($otherThumbnail), 'image');
 
+        $sharedFilmstrip = (string) Str::uuid();
+        IndexedFile::query()->where('thumbnail', $sharedThumbnail)->update(['filmstrip' => $sharedFilmstrip]);
+        file_put_contents(Path::makeThumbnailPath($sharedFilmstrip), 'image');
+
         $link = $this->createLink();
         $this->get($this->linkPath($link))->assertOk();
 
+        DB::flushQueryLog();
+        DB::enableQueryLog();
         $this->get(route('media.image', ['id' => $sharedThumbnail]))->assertOk();
+        $this->get(route('media.image', ['id' => $sharedFilmstrip]))->assertOk();
+        $queries = DB::getQueryLog();
+        DB::disableQueryLog();
+
         $this->get(route('media.image', ['id' => $otherThumbnail]))->assertNotFound();
+
+        // A listing loads dozens of these, so the lookup by image must use an index rather than scan every file.
+        foreach ($queries as $query) {
+            if (!str_contains($query['query'], '"indexed_files"')) {
+                continue;
+            }
+
+            $plan = DB::select('EXPLAIN QUERY PLAN '.$query['query'], $query['bindings']);
+            foreach ($plan as $step) {
+                $this->assertStringNotContainsString('SCAN "indexed_files"', str_replace('SCAN indexed_files', 'SCAN "indexed_files"', $step->detail), $query['query']);
+            }
+        }
     }
 
     public function test_one_session_holds_several_links(): void
@@ -240,7 +407,7 @@ class SharedLinkTest extends TestCase
         $this->actingAs($user);
 
         $this->postJson(route('shared-links.store'), ['path' => 'Some/Dir/missing.mp4', 'expires_in' => 7])->assertNotFound();
-        $this->postJson(route('shared-links.store'), ['path' => 'Some/Dir/', 'expires_in' => 7])->assertNotFound();
+        $this->postJson(route('shared-links.store'), ['path' => 'Some/Missing/', 'expires_in' => 7])->assertNotFound();
         $this->postJson(route('shared-links.store'), ['path' => 'Some/Dir/file.mp4', 'expires_in' => 2])->assertUnprocessable();
 
         $this->freezeSecond();
@@ -257,6 +424,25 @@ class SharedLinkTest extends TestCase
         $this->assertTrue($link->expires_at->equalTo(now()->addDays(30)));
         $this->assertSame(22, strlen($link->token));
         $response->assertJsonPath('link.url', $link->url())->assertJsonPath('link.creator', null);
+    }
+
+    public function test_directories_and_the_root_can_be_linked_to(): void
+    {
+        $this->actingAs($this->userWithRootAccess(['can_share' => true]));
+
+        $this->postJson(route('shared-links.store'), ['path' => 'Some/Dir/', 'expires_in' => 7])->assertCreated();
+        $this->postJson(route('shared-links.store'), ['path' => '', 'expires_in' => 7])->assertCreated();
+
+        $this->assertSame(
+            [['', true], ['Some/Dir', true]],
+            SharedLink::orderBy('path')->get()->map(fn (SharedLink $link) => [$link->path, $link->is_directory])->all());
+
+        $this->getJson(route('shared-links.index', ['path' => '']))->assertOk()->assertJsonCount(1, 'links');
+
+        // Not without access of their own.
+        $this->actingAs(User::factory()->canShare()->create());
+        $this->postJson(route('shared-links.store'), ['path' => 'Some/Dir/', 'expires_in' => 7])->assertNotFound();
+        $this->postJson(route('shared-links.store'), ['path' => '', 'expires_in' => 7])->assertNotFound();
     }
 
     public function test_creating_a_link_needs_the_permission_to_share(): void
@@ -395,6 +581,22 @@ class SharedLinkTest extends TestCase
         $this->assertNotContains($longExpired->id, SharedLink::withTrashed()->pluck('id'));
     }
 
+    public function test_the_description_gives_a_duration_for_videos_and_audio_alone(): void
+    {
+        $this->createFiles(['Some/Dir/image.jpg']);
+        $this->indexFile('Some/Dir/file.mp4', ['media_info' => MediaInfo::fromArray(['durationMs' => 65_000])]);
+        $this->indexFile('Some/Dir/image.jpg', [
+            'kind' => 'image',
+            'mime_type' => 'image/jpeg',
+            'media_info' => MediaInfo::fromArray(['durationMs' => 40]),
+        ]);
+
+        $this->get($this->linkPath($this->createLink()))
+            ->assertSee('<meta property="og:description" content="Video · 1:05">', false);
+        $this->get($this->linkPath($this->createLink(['path' => 'Some/Dir/image.jpg'])))
+            ->assertSee('<meta property="og:description" content="Image">', false);
+    }
+
     public function test_the_preview_image_is_a_jpeg_of_the_thumbnail(): void
     {
         try {
@@ -415,6 +617,7 @@ class SharedLinkTest extends TestCase
             ->assertOk()
             ->assertHeader('Content-Type', 'image/jpeg');
         $this->assertStringStartsWith("\xFF\xD8", $response->getContent());
+        $response->assertHeader('Content-Length', (string) strlen($response->getContent()));
 
         $link->delete();
         $this->get(route('shared-link.preview', ['token' => $link->token]))->assertNotFound();
@@ -431,6 +634,39 @@ class SharedLinkTest extends TestCase
             'expires_at' => now()->addDays(7),
             ...$attributes,
         ])->load('user');
+    }
+
+    /**
+     * @param  list<string>  $paths
+     */
+    private function createFiles(array $paths): void
+    {
+        foreach ($paths as $path) {
+            File::ensureDirectoryExists(dirname($this->mediaPath.'/'.$path));
+            file_put_contents($this->mediaPath.'/'.$path, random_bytes(16));
+        }
+    }
+
+    /**
+     * Index the files (and the directories they're in), after everything on disk is in place, as indexing reads each
+     * directory's mtime.
+     *
+     * @param  list<string>  $paths
+     */
+    private function indexFiles(array $paths): void
+    {
+        foreach ($paths as $path) {
+            $this->indexFile($path);
+        }
+    }
+
+    /**
+     * A directory's listing URL. Absolute and with a query string, as the test client (through url()) trims a trailing
+     * slash from a relative path, which directories need (they'd be redirected back to it).
+     */
+    private function listingUrl(string $path): string
+    {
+        return rtrim(url('/'), '/').media_url($path).'?page=1';
     }
 
     private function linkPath(SharedLink $link): string

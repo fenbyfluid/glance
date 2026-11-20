@@ -1,2 +1,5 @@
+# Shared links (/_s/{token} and their preview images) are open to crawlers so chat apps can preview them: some, like
+# Telegram's and Twitter's, honor robots.txt. Their pages still send noindex, so search engines don't list them.
 User-agent: *
+Allow: /_s/
 Disallow: /

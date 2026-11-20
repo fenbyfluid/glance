@@ -22,7 +22,7 @@ notes (DB caching plan, metadata/search ideas) live in `README.md`; read it befo
 ## Commands
 
 ```bash
-php artisan test                      # PHPUnit (133 tests, ~3s); sqlite :memory:, sync queue, MEDIA_PATH=resources/test-media
+php artisan test                      # PHPUnit (165 tests, ~4s); sqlite :memory:, sync queue, MEDIA_PATH=resources/test-media
 php artisan test --filter=PathTest
 vendor/bin/pint path/to/File.php      # format only files you touched (see Style)
 composer dev                          # serve + queue:listen + pail + vite
@@ -80,28 +80,42 @@ php artisan app:hash [-T] [-m method...] [-r reference] [path...] # compute osha
   playback with the HLS fallback (`playVideoWithFallback()` returns a destroy function) and text/HTML rendering.
 
 ### Access control (security-critical)
-- `AccessControlEntry` (path + users pivot). `User::getPathAccessInfo($path)` returns
-  `['' => bool accessToPath, '<childName>' => bool override, …]`; last matching ancestor rule wins, descendant rules
-  become per-child overrides. Root rule path is `''`. No matching rule ⇒ no access (installs need a root rule; the
-  seeder grants it to its admin).
+- **`Auth\AccessRules` is the only implementation of the access semantics**: one set of `path => granted` rules, the
+  deepest rule that is the path or an ancestor wins, no matching rule ⇒ no access (installs need a root rule, path
+  `''`; the seeder grants it to its admin). Paths compare exactly (case-sensitively). `infoAt($path)` returns
+  `['' => bool accessToPath, '<childName>' => bool override, …]` (a child is visible if anything in it is accessible,
+  so listings show the way down to deeper grants), `allows($path)` the path alone. A user's `AccessControlEntry`s
+  (path + users pivot) are one set (`forUser()`, behind `User::getPathAccessInfo()`); each shared link is another.
+- **In request handling ask `Auth\PathAccess::forRequest($request)`** (built once per request): the user's own rules
+  (or the impersonated user's, `User::getAccessControlOverrideUser()`) plus a set per usable link in the session;
+  `info()` is the union, `allows()` any set. `ensureVisible($path, isDirectory:)` / `deny()` end the request:
+  `abort(404)` (never 403, don't leak existence) or, for a guest, the login page. `isOnlyThroughLinks()` drives the
+  link marker; `searchScope()` gives search the same rules. Overrides come from rules, not children, so a listing is
+  one `whereIn`/`whereNotIn` however big the directory.
 - Lists are filtered with the `ScopeHavingAccess` trait (`havingAccess($info)` on `name`). Child names may be numeric →
   PHP int array keys; always `strval` when comparing (past bug).
-- Admins can impersonate for ACL purposes. In request handling use `Auth\PathAccess::forRequest($request, $path)`,
-  which covers impersonation (`User::getAccessControlOverrideUser($request) ?? $user`) and shared links.
-- Not-allowed ⇒ `abort(404)` (never 403, don't leak existence). Gate `admin` = `users.is_admin`; also guards Horizon.
-- `EnsureUserIsActivated` (`activated` middleware): users are invite-only (`InvitedUserController`), no registration.
-- Any new endpoint touching paths must do the ACL check; tests in `tests/Feature/AccessControlTest.php`.
-- Shared links (`SharedLink`, soft-deleted on revoke, pruned 30 days after revocation/expiry): `/_s/{token}` puts the
-  link ID in the session (`Auth\SharedLinkGrants`) and answers with an Open Graph page that forwards to `/_info`
-  (unfurlers drop cookies on redirects). Every request rechecks each link (`isUsable()`: not expired/revoked, creator
-  activated, still has access and `users.can_share`, path still a file), so links work through the creator's *live*
-  access and break on move. Guests get a non-persisted `Auth\SharedLinkGuest` from the `shared` guard, listed only on
-  the routes a shared file needs (`auth:web,shared`: info, file, stream, image); `PathAccess` sends a guest to login
-  for any path its links don't cover. Signed-in users get the session's links added to their own access, but can only
-  *create* links with their own access, and only with `can_share`, which admins grant per user on the user form
-  (admins included, no override; `/_links` JSON API, `SharedLinkPolicy`). Tests: `SharedLinkTest` (overrides
-  `call()` because `Authenticate` makes the used guard the default for the rest of the process). Directory links are
-  planned (`is_directory` exists, `isUsable()` rejects them for now).
+- Gate `admin` = `users.is_admin`; also guards Horizon. `EnsureUserIsActivated` (`activated` middleware): users are
+  invite-only (`InvitedUserController`), no registration.
+- Any new endpoint touching paths must do the ACL check; tests in `tests/Feature/AccessControlTest.php`,
+  `tests/Unit/Auth/` (`AccessRulesTest`, `PathAccessTest`).
+- Shared links (`SharedLink`, to a file or a directory with everything in it; soft-deleted on revoke, pruned 30 days
+  after revocation/expiry): `/_s/{token}` puts the link ID in the session (`Auth\SharedLinkGrants`) and answers with
+  an Open Graph page that forwards to `/_info` or the directory (unfurlers drop cookies on redirects). `robots.txt`
+  allows `/_s/` alone: Telegram's previewer honors it. Every request
+  rechecks each link (`isUsable()`: not expired/revoked, creator activated, still has access and `users.can_share`,
+  path still a file/directory), so links work through the creator's *live* access and break on move. A link's rules
+  (`getAccessRules()`) are its file alone, or the creator's rules cut down to the directory (`limitedTo()`: the
+  creator's deeper denies still apply). Guests get a non-persisted `Auth\SharedLinkGuest` (no rules of its own) from
+  the `shared` guard, listed only on the routes shared things need (`auth:web,shared`: listings, info, stream, image,
+  search); like restricted users they see the way down to their shares and get sent to login for anything else.
+  Signed-in users see links merged into their own tree, marked with an icon (never saying whose: no user's details
+  are shown to other users, admins' link lists excepted), but can only *create* links with their own access, and only
+  with `can_share`, which admins grant per user on the user form (admins included, no override; `/_links` JSON API,
+  `SharedLinkPolicy`). Any directory can be shared, the root included. Tests: `SharedLinkTest`. `TestCase::call()`
+  resets the default guard, as `Authenticate` makes the used guard the default for the rest of the process. The test
+  client trims a trailing slash from relative URLs, so directory listings need an absolute URL with a query string
+  (`listingUrl()`).
+- TODO: Finer control over what a link covers (a tree of checkboxes) is planned as more rules in its set.
 
 ### Indexing pipeline (`app/Jobs`, Horizon on Redis/Valkey)
 - `IndexDirectoryJob` diffs disk vs `indexed_directories`/`indexed_files`, creates/updates rows, **force-deletes**
@@ -145,17 +159,22 @@ php artisan app:hash [-T] [-m method...] [-r reference] [path...] # compute osha
 - ACL, the "under this path" filter and kinds are pushed *into* the index query. `Search\FilterableSqliteEngine`
   (configured as `scout.tntsearch.engine`) stores each file/text document's directory ID and kind in a `document_meta`
   table in the index (from `__directory_id`/`__kind` keys in `toSearchableArray()`, so indexes need `scout:import`, not
-  `tntsearch:import`). `Search\SearchScope` selects the allowed *directories* in SQL (ACL rules only target directories);
-  the engine joins a `Search\DocumentFilter` against the doclist via temp tables, so the per-term `maxDocs` cap applies
+  `tntsearch:import`). `Search\SearchScope` (from `PathAccess::searchScope()`: the user's rules and each link's,
+  OR-ed) selects the allowed *directories* in SQL (ACL rules only target directories); files shared on their own come
+  along as paths and are allowed by document ID (`DocumentFilter::$extraDocumentIds`, at most a session's links). The
+  engine joins a `Search\DocumentFilter` against the doclist via temp tables, so the per-term `maxDocs` cap applies
   within the allowed set. Never enumerate allowed file IDs per request (16s on MariaDB at prod scale). Skipped when
-  unrestricted. The PHP ACL check after the query stays as the authoritative backstop, with Phabricator-style
-  "overheating" (`SearchOverheated`). Index files live in `storage/*.index*` (gitignored). Tests: `SearchTest`.
+  unrestricted. `PathAccess::allows()` after the query stays as the authoritative backstop, with Phabricator-style
+  "overheating" (`SearchOverheated`); `SearchTest` checks the SQL scope selects exactly what it allows. Guests can
+  search what's shared with them, throttled per IP (`throttle:search`, `AppServiceProvider`). Index files live in
+  `storage/*.index*` (gitignored). Tests: `SearchTest`.
 
 ### Models / data
 `IndexedDirectory` (self-referential tree via `parent_id`, unique `path`), `IndexedFile` (inode, mtime, size, kind,
 mime, `media_info`, thumbnail/filmstrip uuids, `fingerprint_id`), `FileFingerprint`, `IndexedFileText`,
 `Stash{Scene,Performer,Studio,Tag,TagCategory}`, `AccessControlEntry`, `User`. Custom casts in `app/Casts`
-(`AsMediaInfo`, `BinaryToHex`, `Compressed`). Migrations are hand-maintained; latest regroups already-indexed zero-filled files under the blank fingerprint.
+(`AsMediaInfo`, `BinaryToHex`, `Compressed`). Migrations are hand-maintained; latest indexes `indexed_files.thumbnail`/`filmstrip` (a guest's image requests
+look their file up by them).
 
 ## Environment
 

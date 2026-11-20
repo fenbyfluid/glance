@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Auth\AccessRules;
 use App\Http\Middleware\RedirectLocalAccess;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\MassPrunable;
@@ -13,7 +14,8 @@ use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 
 /**
- * A public link to a file, which lets anyone holding it in through its creator's access. Revoking it soft-deletes it.
+ * A public link to a file, or a directory with everything in it, which lets anyone holding it in through its creator's
+ * access. Revoking it soft-deletes it.
  *
  * @property int $id
  * @property string $token
@@ -59,6 +61,8 @@ class SharedLink extends Model
     protected $attributes = [
         'is_directory' => false,
     ];
+
+    private ?AccessRules $creatorRules = null;
 
     protected function casts(): array
     {
@@ -120,12 +124,6 @@ class SharedLink extends Model
             return 'Expired';
         }
 
-        // TODO: Directory links are planned (the guest user would get a rule on the directory, limited by the
-        //       creator's own descendant rules), but nothing creates them yet.
-        if ($this->is_directory) {
-            return 'Directory links aren\'t supported yet';
-        }
-
         // Deleting an account clears its password (ProfileController::destroy()), as does a pending invite.
         if ($this->user->password === null) {
             return 'Creator\'s account is deleted or not activated';
@@ -135,15 +133,48 @@ class SharedLink extends Model
             return 'Creator isn\'t allowed to create public links';
         }
 
-        if (!$this->user->getPathAccessInfo($this->path)['']) {
-            return 'Creator no longer has access to the file';
+        $what = $this->is_directory ? 'directory' : 'file';
+
+        if (!$this->getCreatorRules()->allows($this->path)) {
+            return 'Creator no longer has access to the '.$what;
         }
 
-        if (!is_file(config('media.path').'/'.$this->path)) {
-            return 'File has been moved or deleted';
+        $filesystemPath = config('media.path').'/'.$this->path;
+        if (!($this->is_directory ? is_dir($filesystemPath) : is_file($filesystemPath))) {
+            return ucfirst($what).' has been moved or deleted';
         }
 
         return null;
+    }
+
+    /**
+     * What the link lets its visitors see, as a set of access rules: the file on its own, or the directory and
+     * everything in it that its creator can see (so the creator's deny rules deeper down still apply). Only meaningful
+     * while the link is usable.
+     */
+    public function getAccessRules(): AccessRules
+    {
+        if (!$this->is_directory) {
+            return AccessRules::forPath($this->path);
+        }
+
+        return $this->getCreatorRules()->limitedTo($this->path);
+    }
+
+    /**
+     * The name of what's shared, with the app's name standing in for the root.
+     */
+    public function getName(): string
+    {
+        return ($this->path !== '') ? basename($this->path) : config('app.name');
+    }
+
+    /**
+     * The creator's rules, looked up once per link, as checking it and its access rules both need them.
+     */
+    private function getCreatorRules(): AccessRules
+    {
+        return $this->creatorRules ??= AccessRules::forUser($this->user);
     }
 
     /**

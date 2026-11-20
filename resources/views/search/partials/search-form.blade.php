@@ -1,4 +1,4 @@
-<form x-data="{{ Js::from([ 'name' => route('search.name'), 'content' => route('search.content'), 'epoch' => 0, 'loading' => false, 'overheated' => false, 'query' => '', 'results' => [] ]) }}" x-on:submit.prevent="performSearch" class="h-full flex flex-col">
+<form x-data="{{ Js::from([ 'name' => route('search.name'), 'content' => route('search.content'), 'epoch' => 0, 'loading' => false, 'overheated' => false, 'error' => null, 'query' => '', 'results' => [] ]) }}" x-on:submit.prevent="performSearch" class="h-full flex flex-col">
     {{-- On compact screens (see app.css) the search box gets out of the way of the results: this wrapper becomes the
          scroller, with the box as a sticky header inside it that collapsingSearchHeader slides away while scrolling
          down and back while scrolling up (and when typing in it). The results then scroll under the box. On spacious
@@ -76,11 +76,20 @@
                             @endforeach
                         </div>
                         <div class="flex flex-col overflow-hidden">
-                            <span x-text="result.name" class="overflow-hidden overflow-ellipsis whitespace-nowrap"></span>
+                            <span class="flex items-center gap-1.5">
+                                <span x-text="result.name" class="overflow-hidden overflow-ellipsis whitespace-nowrap"></span>
+                                <template x-if="result.shared">
+                                    @include('shared-links.partials.shared-marker')
+                                </template>
+                            </span>
                             <span x-text="result.path + '/'" class="overflow-hidden overflow-ellipsis whitespace-nowrap text-sm text-gray-500 dark:text-gray-400"></span>
                             <span x-text="result.text ?? ''" class="overflow-hidden overflow-ellipsis line-clamp-2 pt-0.5 leading-5.5"></span>
                         </div>
                     </a>
+                </template>
+
+                <template x-if="error">
+                    <div x-text="error" class="p-2 sm:p-4 bg-white dark:bg-gray-800 shadow-sm rounded-lg text-center text-red-600 dark:text-red-400 pointer-events-auto"></div>
                 </template>
 
                 <template x-if="overheated">

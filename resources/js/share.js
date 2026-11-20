@@ -1,6 +1,6 @@
 // The share dialog (shared-links/partials/dialog.blade.php): the link for people who already have access, and the
-// file's public links. Opened by an `open-share-dialog` window event with `{ path, internalUrl }`, from the lightbox
-// (media.js) and the info page (info.js).
+// file's or directory's public links. Opened by an `open-share-dialog` window event with `{ path, internalUrl, name? }`,
+// from the lightbox (media.js), the info page (info.js) and a directory's navigation bar.
 
 /**
  * The URL as reached from outside: on the local network we're redirected to a `-local` hostname, which won't resolve
@@ -74,9 +74,9 @@ export function shareDialog(linksUrl, defaultExpiresIn, canCreateLinks) {
         expiresIn: defaultExpiresIn,
         creating: false,
 
-        open({ path, internalUrl }) {
+        open({ path, internalUrl, name }) {
             this.path = path;
-            this.name = path.split('/').pop();
+            this.name = name ?? path.split('/').pop();
             this.internalUrl = toPublicUrl(internalUrl);
             this.links = [];
             this.error = null;

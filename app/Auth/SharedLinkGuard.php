@@ -9,8 +9,9 @@ use Illuminate\Http\Request;
 
 /**
  * Authenticates visitors who aren't signed in as a SharedLinkGuest, when their session holds shared links that are
- * still usable. Only the routes that serve shared files list this guard (`auth:web,shared`), so a guest gets nowhere
- * else, and any of their requests for a path the links don't cover is sent to the login page (PathAccess).
+ * still usable. Only the routes that serve shared files and directories list this guard (`auth:web,shared`: listings,
+ * info pages, streams, images and search), so a guest gets nowhere else, and any of their requests for a path the
+ * links don't cover is sent to the login page (PathAccess).
  */
 class SharedLinkGuard implements Guard
 {

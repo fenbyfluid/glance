@@ -44,11 +44,6 @@ final class SharedLinkGrants
         $request->attributes->remove(self::class);
     }
 
-    public static function grantsPath(Request $request, string $path): bool
-    {
-        return self::forRequest($request)->contains(fn (SharedLink $link) => $link->path === $path);
-    }
-
     /**
      * @return Collection<int, SharedLink>
      */
