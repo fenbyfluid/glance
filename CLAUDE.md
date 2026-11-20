@@ -182,7 +182,9 @@ look their file up by them).
   (`Number` formatting), zlib, ffi (vips). Tests needing intl are marked `#[RequiresPhpExtension('intl')]`.
 - Prod: Fedora, Nginx + PHP as `apache`, MariaDB, Valkey, systemd units in `deployment/` (Horizon + scheduler timer),
   FFmpeg with CUDA filters. Paths like `/usr/bin/tesseract` are prod-absolute; tests fake `Process`.
-- Clockwork profiler is wired in (`app('clockwork')->event(...)->run(...)` around expensive steps).
+- Clockwork profiler is wired in (`app('clockwork')->event(...)->run(...)` around expensive steps), web UI at
+  `/_clockwork`. Admins only: its routes are put behind `web`/`auth`/`can:admin` in `routes/web.php` (it registers
+  them bare), and `RestrictClockworkToAdmins` turns it off for everyone else's requests. Tests: `ClockworkAccessTest`.
 - Tests: Feature tests seed `indexed_directories` manually for `resources/test-media/valid/child`; use
   `$this->withoutVite()` and `config(['cache.stores.apc.driver' => 'array'])`. Users see nothing without a rule: use
   `TestCase::userWithRootAccess()` / `grantAccess()`. Coverage is thin — add tests with fixes.

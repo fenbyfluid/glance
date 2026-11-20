@@ -1,5 +1,8 @@
 <?php
 
+use Illuminate\Container\Container;
+use Illuminate\Foundation\Application;
+
 return [
 
     /*
@@ -141,7 +144,9 @@ return [
     |
     */
 
-    'web' => env('CLOCKWORK_WEB', true),
+    // Under an internal (_-prefixed) path so it can't shadow a media directory named "clockwork" (the default also
+    // serves it at /__clockwork). The UI finds the API at /__clockwork by itself.
+    'web' => env('CLOCKWORK_WEB', '_clockwork'),
 
     /*
     |------------------------------------------------------------------------------------------------------------------
@@ -388,9 +393,9 @@ return [
 
     // A list of classes that will never be serialized (e.g. a common service container class)
     'serialization_blackbox' => [
-        \Illuminate\Container\Container::class,
-        \Illuminate\Foundation\Application::class,
-        \Laravel\Lumen\Application::class,
+        Container::class,
+        Application::class,
+        Laravel\Lumen\Application::class,
     ],
 
     /*

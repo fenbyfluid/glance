@@ -6,10 +6,20 @@ use App\Http\Controllers\MediaController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SharedLinkController;
+use Clockwork\Support\Laravel\ClockworkController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 require __DIR__.'/auth.php';
+
+// Clockwork registers its routes (the /__clockwork API and the web UI) with no middleware at all: no session, so no
+// user, and anyone could read every recorded request. Put them behind the admin gate, like Horizon. Its own
+// authentication only knows a shared password.
+foreach (Route::getRoutes() as $route) {
+    if (str_starts_with($route->getActionName(), ClockworkController::class.'@')) {
+        $route->middleware(['web', 'auth', 'activated', 'can:admin']);
+    }
+}
 
 Route::get('/_get_remote_ip', function (Request $request) {
     return response($request->ip(), 200, ['Content-Type' => 'text/plain']);
